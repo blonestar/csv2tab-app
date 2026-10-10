@@ -5,10 +5,10 @@ binarni WT Input `.tab`. Nastala je iz web aplikacije [csv2tab](https://github.c
 jezgro konverzije, ali ima **svoj interfejs i svoju bazu**. Ovaj dokument je plan cele aplikacije. Pravila rada za
 agente su u `AGENTS.md`.
 
-Stanje: **faze 1 (osnova), 2 (baza) i 3 (uvoz, pregled, izvoz) su gotove**: uvoz fajla (dijalog i prevlačenje), tabela
-zapisa sa izmenom, materijali, mapiranje kolona, izvoz u WT folder sa poređenjem pre prepisivanja i poseban prozor
-poređenja. Posao se drži samo u memoriji (jedan otvoren); čuvanje, lista poslova i pamćenje izbora stižu u fazama 4 i 5.
-`node:sqlite` na Windowsu nije proveren. Kad se faza završi, označi je u odeljku [Faze](#faze).
+Stanje: **faze 1 (osnova), 2 (baza), 3 (uvoz, pregled, izvoz) i 4 (poslovi) su gotove**: uvoz fajla (dijalog i
+prevlačenje) odmah pravi posao u bazi, izmene se čuvaju same, lista poslova ima pretragu i oznaku „menjano posle
+izvoza“, posao se otvara i izvozi bez originalnog fajla, izvozi (sa tačnim bajtovima) su u bazi. Pamćenje izbora
+(materijal, kolone) i stranica podešavanja stižu u fazi 5. `node:sqlite` na Windowsu nije proveren. Kad se faza završi, označi je u odeljku [Faze](#faze).
 
 ## Cilj
 
@@ -126,12 +126,18 @@ rough.js, milimetarski papir) se **ne prenosi**. Jezik je srpski, latinica.
 
 Jedan glavni prozor sa bočnom trakom:
 
-- **Poslovi** — lista sa pretragom (ime, materijal, naziv dela, datum) i dugme za uvoz. Fajl može i da se prevuče.
-- **Posao** (otvoren iz liste) — kartice:
+- **Poslovi** — lista (najnoviji prvi, po 50 sa „Prikaži još“) sa pretragom (ime, napomena, fajl, materijal, naziv
+  dela, datum) i dugme za uvoz. Fajl može i da se prevuče. Svaki red pokazuje stanje izvoza: nije izvezen / izvezen /
+  menjan posle izvoza. Ako je uvezen fajl isti (SHA-256) kao izvor postojećeg posla, pita se: otvori postojeći, napravi
+  nov ili odustani.
+- **Posao** (otvoren iz liste, dugme „← Poslovi“ vraća na listu) — ime i napomena se menjaju na licu mesta, indikator
+  čuvanja (sačuvano / čeka / čuvam / nije sačuvano), brisanje posla (potvrda kaže da se brišu i sačuvani izvozi, a da
+  fajlovi u WT folderu ostaju). Kartice:
   - *Zapisi*: tabela sa izmenom ćelija (ručne izmene su označene), zamena dimenzija po redu, upozorenja.
   - *Materijali*: za svaki materijal iz fajla WT materijal, traka, „Prati teksturu" i ime izlaznog fajla.
   - *Izvor*: sirovi redovi i mapiranje kolona.
-  - *Izvozi*: šta je, kada i gde upisano.
+  - *Izvozi*: trenutni fajlovi posla sa stanjem svakog (izvezen / menjan / nije izvezen) i istorija izvoza iz baze
+    (vreme, fajl, broj zapisa, ishod „upisano“ ili „isti fajl već postoji“, folder).
 - **Katalog** — pregled i pretraga materijala i traka (izmena dolazi kasnije).
 - **Podešavanja**.
 
@@ -154,22 +160,58 @@ stavlja na mrežni disk.
 | `edge_bands` | `id` (PK), `source`, `code`, `name`, `position`; ista pravila kao za materijale. |
 | `meta` | `key` (PK), `value`: unutrašnji podaci (`catalog_hash`). Ne izlaže se rendereru. |
 
+**Migracija `0002_poslovi.sql` (faza 4)**, vremena su milisekunde (UTC):
+
+| Tabela | Kolone |
+| --- | --- |
+| `jobs` | `id` (PK), `name`, `note`, `created_at`, `updated_at`, `source_name`, `source_kind` (`csv`/`ods`/`xlsx`/`tab`), `source_size`, `source_sha256`, `source_path` (samo za uvoz kroz dijalog, inače `NULL`; renderer je nikad ne vidi), `state` (JSON `JobState`), `part_count`, `outputs` (JSON: trenutni izlazni fajlovi `{material, name, sha256, count}`), `export_status` (`never`/`current`/`changed`), `last_export_at`, `search` (tekst za pretragu), `source_bytes` (BLOB, posle upisa se ne menja). Indeksi: `(created_at DESC, id DESC)` i `source_sha256`. |
+| `job_parts` | konačni zapisi posla po materijalu, posle ručnih izmena: `job_id` → `jobs` (`ON DELETE CASCADE`), `position`, `material` (naziv iz fajla), `wt_code` (šifra WT materijala, `''` = nijedan; nije `materials.id`), `dim1`, `dim2`, `edge1`, `edge2`, `grain`, `qty`, `name`. PK `(job_id, position)`. Zamenjuju se pri svakom čuvanju, u istoj transakciji kao `state`. |
+| `exports` | `id` (PK), `job_id` → `jobs` (`ON DELETE CASCADE`), `material`, `file_name`, `folder`, `exported_at`, `record_count`, `size`, `sha256`, `result` (`written` / `identical` = u folderu je već bio bajt-identičan fajl), `bytes` (BLOB: tačno upisano). Nastaje samo za upisane i bajt-identične fajlove, nikad za preskočene ili neuspele. |
+
 Tabele ispod su još nacrt; svaka stiže kao **nova migracija** u fazi koja je koristi, kad se zna njen stvarni oblik:
 
 | Tabela | Sadržaj |
 | --- | --- |
-| `jobs` | ime, napomena, datumi, izvorni fajl (ime, putanja, tip, heš, **bajtovi**), `state` (JSON) |
-| `job_parts` | konačni zapisi posla po materijalu (za pretragu, potrošnju i štampu) |
-| `exports` | posao, materijal, ime fajla, folder, vreme, broj zapisa, heš i **bajtovi** izvezenog `.tab` |
 | `material_map` | naziv materijala iz CSV-a → WT materijal, traka, „Prati teksturu" |
 | `column_maps` | potpis zaglavlja → mapiranje kolona |
+
+- **Čuvanje posla.** Uvoz odmah poziva `jobs.create` (izvorni bajtovi, početno stanje, zapisi, izlazni fajlovi); svaka
+  izmena stanja ide kroz `jobs.save` (stanje, zapisi, izlazni fajlovi; izvor se ne dira). Renderer šalje i izlazne
+  `.tab` bajtove, a glavni proces sam računa SHA-256 (proverava samo da veličina odgovara broju zapisa). Sve što stiže
+  proverava `src/main/operations/validate.ts`, a stanje `parseJobState` (`src/shared/jobStateCheck.ts`): nepoznato
+  polje, tip, verzija ili preveliki spisak se odbijaju. Isti `parseJobState` se poziva pri čitanju iz baze; ako stanje
+  ne prolazi (npr. iz novije verzije), `jobs.get` vraća `state: null` i poruku, a posao se prikazuje samo kao poruka
+  (bez izmena i izvoza) i može da se obriše.
+- **Automatsko čuvanje (`src/renderer/session.tsx`).** Izmena stanja pokreće tajmer od 700 ms (nova izmena ga
+  restartuje); upisi idu jedan za drugim. Odmah (bez čekanja) se čuva pre: povratka na listu, otvaranja drugog posla,
+  uvoza, izvoza i zatvaranja glavnog prozora (glavni proces šalje `app.flush`, čeka odgovor najviše 8 s, pa pita
+  korisnika ako čuvanje nije uspelo). Neuspeo upis se vidi (indikator „Nije sačuvano“, poruka sa uzrokom), ponavlja se
+  na 4 s i ima dugme „Pokušaj ponovo“; napuštanje posla tada traži odluku (ponovo / bez čuvanja / ostani). Prozor
+  poređenja ne učestvuje.
+- **Stanje izvoza (`jobs.export_status`).** Izračunava se pri svakom čuvanju posla i pri svakom beleženju izvoza
+  (`computeExportStatus` u `src/main/db/jobs.ts`), pa je lista običan upit. Trenutni izlazni fajlovi posla su
+  `jobs.outputs` (ime i SHA-256 iz poslednjeg čuvanja). Svaki se poredi sa NAJNOVIJIM izvozom pod istim imenom (bez
+  razlike u veličini slova): nema izvoza = `never`, isti heš = `current`, drugi heš = `changed`. Posao: ništa nikad
+  izvezeno = `never`; inače `current` samo ako je svaki trenutni fajl `current`. Posledice: jedan izmenjen materijal od
+  tri daje „menjan“ (kartica Izvozi pokazuje koji); izmena pa vraćanje izmene daje opet „izvezen“ (porede se bajtovi);
+  promenjeno ime fajla ili materijala posle izvoza daje „menjan“ dok se novo ime ne izveze (stari izvozi ostaju u
+  istoriji, ali se ne računaju); preskočeno prepisivanje se ne beleži, pa posao ostaje „menjan“ (ili „nije izvezen“);
+  posao koji je izvezen, a sad nema nijedan izlazni fajl, je „menjan“. Folder se ne poredi, samo ime i bajtovi.
+- **Pretraga.** `LIKE` nad kolonom `jobs.search` (reči se spajaju sa AND), ne FTS5. FTS5 jeste ugrađen u `node:sqlite`
+  Electrona 44 (provereno, uključujući `trigram`), ali SQLite-ov `lower()`/`LIKE` ne svode slova van ASCII (`lower('Š')`
+  ostaje `Š`), pa bi indeks ionako tražio tekst svođen u JavaScript-u; trigram traži bar 3 znaka i udvostručuje bazu,
+  a skeniranje kolone je za nekoliko hiljada poslova brzo (3000 poslova sa 20 zapisa: lista 1 ms, pretraga do 5 ms).
+  Tekst se sklapa pri čuvanju (`src/main/db/search.ts`): mala slova, bez dijakritika (NFD), a `đ` se čuva i kao `d` i
+  kao `dj` (nalazi se po `dorde` i po `djordje`). Isto svođenje prolazi upit, pa „sto“ nalazi „što“ i „ŠTO“ nalazi „sto“.
+  Datum je u tekstu kao `dd.mm.gggg` i `gggg-mm-dd`. Ako lista poslova naraste toliko da ovo bude sporo, prelazi se na
+  FTS5 sa istim svođenim tekstom.
 
 - **Stanje posla (`JobState`, faza 3).** Tip je u `src/shared/job.ts`, običan JSON bez `Map`/`Set`/`Uint8Array`:
   kodiranje, separator, list, mapiranje (`'auto'` ili izbor), spajanje, izbor po materijalu (`MaterialChoice`: WT
   materijal, traka, „Prati teksturu", ime fajla; odsutno polje = predlog) i ručne izmene po ključu zapisa. Sve izvedeno
   računa čista funkcija `deriveJob(file, state, catalog, rules, cache?)` u `src/renderer/job/derive.ts`; prelazi stanja
-  (promena izvora briše izmene) su u `src/renderer/job/state.ts`. Faza 4 čuva `bajtovi izvora + JobState` i poziva
-  `deriveJob` pri otvaranju; interfejs ne sme da drži nijednu odluku van `JobState`. Podrazumevana pravila kantovanja i
+  (promena izvora briše izmene) su u `src/renderer/job/state.ts`. Posao u bazi čuva `bajtovi izvora + JobState`, a
+  `deriveJob` se poziva pri otvaranju; interfejs ne sme da drži nijednu odluku van `JobState`. Podrazumevana pravila kantovanja i
   spajanje dolaze iz `src/renderer/job/defaults.ts` (faza 5 ih menja sačuvanim vrednostima).
 - **Posao čuva ulaz i odluke, ne samo rezultat.** `jobs.state` nosi ono što web drži u `FileEntry`: kodiranje,
   separator, list, mapiranje kolona, spajanje, izbor po materijalu, ime fajla i ručne izmene. Pri otvaranju se zapisi
@@ -234,9 +276,13 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
       interfejs stiže u izvezeni fajl. Provereno smoke testom na Linuxu; na Windowsu nije.
       **Otvoreno:** tabela zapisa crta samo vidljive redove (bez ograničenja od 3000 kao u webu); CSV se parsira u
       glavnoj niti rendera (bez Workera); provereno sa 6000 redova.
-- [ ] **4. Poslovi**: čuvanje posla (izvor, `state`, zapisi, izvozi), lista sa pretragom, ponovno otvaranje, oznaka
+- [x] **4. Poslovi**: čuvanje posla (izvor, `state`, zapisi, izvozi), lista sa pretragom, ponovno otvaranje, oznaka
       „menjano posle izvoza". *Gotovo kad:* posao sa ručnim izmenama posle restarta daje isti `.tab` bez originalnog
-      fajla na disku.
+      fajla na disku. Provereno smoke testom na Linuxu (izvoz u prazan folder posle restarta je bajt-identičan prvom);
+      na Windowsu nije.
+      **Otvoreno:** nema poređenja sa sačuvanim izvozom u interfejsu (bajtovi su u bazi); nema izmene imena fajla ni
+      ponovnog uvoza istog posla sa novog mesta; posao ne pamti u kom WT folderu je poslednji put izvezen osim kroz
+      istoriju izvoza.
 - [ ] **5. Pamćenje izbora i podešavanja**: `material_map`, `column_maps`, stranica podešavanja (folderi, tabela
       kantova, pravila, tema), rezervna kopija i vraćanje. *Gotovo kad:* drugi uvoz fajla sa istim materijalima ne
       traži nijedan ručni izbor.
@@ -263,8 +309,10 @@ Kasnije, redosled nije utvrđen:
 - **Baza**: vitest testovi nad `node:sqlite` u običnom Node-u (bez Electrona), svaki nad privremenim fajlom:
   migracije, upiti, punjenje kataloga.
 - **Smoke test** (Playwright `_electron`): pokreni aplikaciju sa privremenim `userData`, uvezi fixture, izvezi u
-  privremeni folder, uporedi bajtove sa referentnim `.tab`, ponovo pokreni i proveri da posao postoji. Dijalozi se u
-  testu zaobilaze promenljivama okruženja `CSV2TAB_TEST_IMPORT`, `CSV2TAB_TEST_COMPARE` i `CSV2TAB_TEST_FOLDER` koje
+  privremeni folder, uporedi bajtove sa referentnim `.tab`, ponovo pokreni i proveri da posao postoji. Test čeka na uslove
+  na stranici (indikator čuvanja, `data-loaded` liste), nikad na fiksno vreme; uvozi iz privremene kopije fajla koju briše
+  pre restarta; menja bazu samo dok je aplikacija zatvorena (neispravno stanje). Dijalozi se u
+  testu zaobilaze promenljivama okruženja `CSV2TAB_TEST_IMPORT`, `CSV2TAB_TEST_COMPARE`, `CSV2TAB_TEST_FOLDER` i `CSV2TAB_TEST_FAIL_SAVE` (svako čuvanje posla pada) koje
   glavni proces čita pri svakom pozivu, ali samo uz `CSV2TAB_TEST=1` i nikad u spakovanoj aplikaciji
   (`src/main/testHooks.ts`).
 - Ručna provera na Windowsu pre svakog izdanja: instalacija preko prethodne verzije, otvaranje fajla sa dijakritikom

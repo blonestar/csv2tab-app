@@ -194,6 +194,20 @@ export function PartsTable({ derived, setState, rules }: { derived: DerivedJob; 
       ) : (
         <div className="table-scroll" ref={scroller} onScroll={(e) => setView({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })} data-testid="parts-scroll">
           <table className="grid parts-table">
+            <colgroup>
+              <col className="c-rn" />
+              <col className="c-dim" />
+              <col className="c-swap" />
+              <col className="c-dim" />
+              <col className="c-edge" />
+              <col className="c-edge" />
+              <col className="c-tex" />
+              <col className="c-qty" />
+              <col />
+              <col className="c-mat" />
+              <col className="c-mark" />
+              <col className="c-act" />
+            </colgroup>
             <thead>
               <tr>
                 <th className="rn">Rb.</th>

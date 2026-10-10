@@ -4,8 +4,16 @@ import { schemaVersion } from '../db/migrate';
 import type { AppInfo, IpcOperations } from '../../shared/api';
 import { noArgs, type IpcContext, type Operation } from './types';
 
-export function appOperations(ctx: IpcContext): { 'app.info': Operation<'app.info'> } {
+export function appOperations(ctx: IpcContext): { 'app.info': Operation<'app.info'>; 'app.flushed': Operation<'app.flushed'> } {
   return {
+    // Odgovor renderera na zahtev za čuvanje pre zatvaranja prozora (vidi src/main/index.ts).
+    'app.flushed': {
+      validate(args) {
+        if (args.length !== 1 || typeof args[0] !== 'boolean') throw new Error('Očekivan je ishod čuvanja.');
+        return [args[0]];
+      },
+      run: (ok) => ctx.windows.flushed(ok),
+    },
     'app.info': {
       validate: noArgs,
       run: (): AppInfo => {

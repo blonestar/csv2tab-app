@@ -56,39 +56,39 @@ function DiffItem({ file, existing, name, checked, onCheck }: { file: ExportFile
 }
 
 export function ExportControls({ derived }: { derived: DerivedJob }) {
-  const { addLog } = useSession();
+  const { session, flush, applyExports } = useSession();
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<Banner>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
   async function finish(files: ExportFile[], overwrite: string[]) {
-    const res = await window.api.export.write(files.map((f) => ({ name: f.name, bytes: f.bytes })), overwrite);
+    const res = await window.api.export.write(files.map((f) => ({ name: f.name, bytes: f.bytes, material: f.material })), overwrite, session?.jobId ?? null);
     if (!res.ok) {
       setBanner({ kind: 'problem', text: res.message });
       return;
     }
-    const now = Date.now();
-    const entries = res.items.flatMap((it, i) =>
-      it.status === 'written' || it.status === 'identical'
-        ? [{ name: it.name, time: now, count: files[i].count, folder: res.folder, result: it.status }]
-        : [],
-    );
-    if (entries.length) addLog(entries);
+    if (res.job) applyExports(res.job);
     const bad = res.items.filter((it) => it.status === 'error' || it.status === 'skipped');
     const written = res.items.filter((it) => it.status === 'written').length;
     const same = res.items.filter((it) => it.status === 'identical').length;
     const text =
       `Upisano: ${written} ${written === 1 ? 'fajl' : 'fajlova'} u ${res.folder}` +
       (same ? `; ${same} već postoji isti` : '') +
-      (bad.length ? `. Nije upisano: ${bad.map((b) => `${b.name} (${b.message ?? b.status})`).join('; ')}` : '.');
-    setBanner({ kind: bad.length ? 'error' : 'ok', text });
+      (bad.length ? `. Nije upisano: ${bad.map((b) => `${b.name} (${b.message ?? b.status})`).join('; ')}` : '.') +
+      (res.recordError ? ` Izvoz nije zabeležen u poslu: ${res.recordError}` : '');
+    setBanner({ kind: bad.length || res.recordError ? 'error' : 'ok', text });
   }
 
   async function run() {
     setBusy(true);
     setBanner(null);
     try {
+      // izvoz se beleži uz sačuvano stanje posla, pa se prvo upisuje sve nesačuvano
+      if (!(await flush())) {
+        setBanner({ kind: 'error', text: 'Posao nije sačuvan u bazi, pa izvoz nije pokrenut. Pokušajte ponovo.' });
+        return;
+      }
       const files = exportFiles(derived);
       const check = await window.api.export.check(files.map((f) => ({ name: f.name, bytes: f.bytes })));
       if (!check.ok) {

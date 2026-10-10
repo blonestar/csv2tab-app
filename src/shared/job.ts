@@ -1,6 +1,6 @@
 // Stanje jednog uvezenog fajla: sve što korisnik odlučuje, kao običan JSON (bez Map, Set, Uint8Array, klasa).
-// Faza 4 čuva tačno `bajtovi izvora + JobState` u bazi; zapisi se ponovo računaju iz toga funkcijom `deriveJob`
-// (src/renderer/job/derive.ts). Ništa što utiče na izlaz ne sme da živi van ovog objekta.
+// Baza čuva tačno `bajtovi izvora + JobState` (jobs.state, proverava ga parseJobState u src/shared/jobStateCheck.ts);
+// zapisi se ponovo računaju iz toga funkcijom `deriveJob` (src/renderer/job/derive.ts). Ništa što utiče na izlaz ne sme da živi van ovog objekta.
 import type { InputEncoding } from '@core/encoding';
 import type { ColumnMapping } from '@core/parts';
 
@@ -33,6 +33,7 @@ export interface MaterialChoice {
   fileName?: string;
 }
 
+/** Novo polje ili promena značenja = nova verzija i prelaz sa stare; parseJobState zna samo verzije koje poznaje. */
 export interface JobState {
   version: 1;
   /** Kodiranje CSV-a; 'auto' = prepoznato. */

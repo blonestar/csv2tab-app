@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { basename } from 'node:path';
 import type { OpenPurpose } from '../shared/api';
 import { MAX_OPEN_BYTES, UNSUPPORTED_MSG, kindFromName, type OpenedFile } from '../shared/job';
+import { rememberOpenedPath } from './openedPaths';
 import { TEST_ENV, testOverride, type TestHookContext } from './testHooks';
 
 const hookCtx = (testMode: boolean): TestHookContext => ({ env: process.env, testMode, packaged: app.isPackaged });
@@ -37,6 +38,7 @@ export async function openFile(purpose: OpenPurpose, testMode: boolean): Promise
   }
   const file = await readOpenedFile(path);
   if (purpose === 'compare' && file.kind !== 'tab') throw new Error('Za poređenje je potreban .tab fajl.');
+  if (purpose === 'import') rememberOpenedPath(file.name, file.bytes, path);
   return file;
 }
 
