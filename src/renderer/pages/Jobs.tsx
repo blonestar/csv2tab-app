@@ -1,32 +1,59 @@
+// Poslovi: lista sačuvanih poslova (uvoz i prevlačenje fajla) ili otvoren posao. Uvoz uvek pravi posao u bazi;
+// ako je isti fajl već uvezen, korisnik bira između postojećeg i novog posla.
 import { useState } from 'react';
 import { MAX_OPEN_BYTES, UNSUPPORTED_MSG, kindFromName, type OpenedFile } from '../../shared/job';
+import type { JobListItem } from '../../shared/jobs';
+import { ConfirmDialog } from '../components/ConfirmDialog';
+import { errText, formatDateTime } from '../format';
+import { JobList } from '../job/JobList';
 import { JobView } from '../job/JobView';
 import { useSession } from '../session';
 
-const errText = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e));
+type Retry = (force: boolean) => Promise<void>;
 
 export function Jobs() {
-  const { session, open, close, isDirty, catalogError } = useSession();
+  const { session, derived, openJob, importFile, createFromFile, closeJob, catalogError } = useSession();
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  // fajl koji čeka potvrdu jer bi zamenio posao sa neodbačenim izmenama
-  const [waiting, setWaiting] = useState<OpenedFile | 'close' | null>(null);
+  const [duplicate, setDuplicate] = useState<{ file: OpenedFile; existing: JobListItem[] } | null>(null);
+  // radnja koju je zaustavilo neuspelo čuvanje otvorenog posla; korisnik bira ponovni pokušaj ili nastavak bez čuvanja
+  const [blocked, setBlocked] = useState<Retry | null>(null);
 
-  function request(file: OpenedFile | 'close') {
-    if (session && isDirty) setWaiting(file);
-    else apply(file);
+  async function guarded(retry: Retry, force = false) {
+    setError(null);
+    try {
+      await retry(force);
+    } catch (e) {
+      setError(errText(e));
+    }
   }
-  function apply(file: OpenedFile | 'close') {
-    setWaiting(null);
-    if (file === 'close') close();
-    else open(file);
-  }
+
+  const doImport =
+    (file: OpenedFile): Retry =>
+    async (force) => {
+      const r = await importFile(file, force);
+      if (r.kind === 'blocked') setBlocked(() => doImport(file));
+      else if (r.kind === 'exists') setDuplicate({ file, existing: r.existing });
+    };
+  const doOpen =
+    (id: number): Retry =>
+    async (force) => {
+      if ((await openJob(id, force)) === 'blocked') setBlocked(() => doOpen(id));
+    };
+  const doCreate =
+    (file: OpenedFile): Retry =>
+    async (force) => {
+      if ((await createFromFile(file, force)) === 'blocked') setBlocked(() => doCreate(file));
+    };
+  const doClose: Retry = async (force) => {
+    if ((await closeJob(force)) === 'blocked') setBlocked(() => doClose);
+  };
 
   async function importDialog() {
     setError(null);
     try {
       const f = await window.api.files.open('import');
-      if (f) request(f);
+      if (f) await guarded(doImport(f));
     } catch (e) {
       setError(errText(e));
     }
@@ -42,12 +69,13 @@ export function Jobs() {
     if (!kind) return setError(UNSUPPORTED_MSG);
     if (f.size > MAX_OPEN_BYTES) return setError('Fajl je veći od 50 MB.');
     try {
-      request({ name: f.name, kind, bytes: new Uint8Array(await f.arrayBuffer()) });
+      await guarded(doImport({ name: f.name, kind, bytes: new Uint8Array(await f.arrayBuffer()) }));
     } catch (err) {
       setError(errText(err));
     }
   }
 
+  const dup = duplicate?.existing[0];
   return (
     <div
       className={dragging ? 'jobs-page dragging' : 'jobs-page'}
@@ -56,30 +84,55 @@ export function Jobs() {
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => void onDrop(e)}
     >
-      <h1>Poslovi</h1>
-      <div className="dropzone" data-testid="dropzone">
-        <button type="button" className="btn primary" data-testid="import" onClick={() => void importDialog()}>Uvezi fajl…</button>
-        <span className="muted">ili prevucite .csv, .ods, .xlsx ili .tab ovde</span>
-        {session && <button type="button" className="btn" data-testid="close-job" onClick={() => request('close')}>Zatvori posao</button>}
-      </div>
+      {session ? (
+        <div className="pagehead">
+          <button type="button" className="btn" data-testid="close-job" onClick={() => void guarded(doClose)}>← Poslovi</button>
+        </div>
+      ) : (
+        <>
+          <h1>Poslovi</h1>
+          <div className="dropzone" data-testid="dropzone">
+            <button type="button" className="btn primary" data-testid="import" onClick={() => void importDialog()}>Uvezi fajl…</button>
+            <span className="muted">ili prevucite .csv, .ods, .xlsx ili .tab ovde</span>
+          </div>
+        </>
+      )}
       {catalogError && <p role="alert" className="banner error">Katalog se ne može učitati: {catalogError}</p>}
       {error && <p role="alert" className="banner error" data-testid="import-error">{error}</p>}
       {session ? (
-        <JobView key={session.id} session={session} />
+        derived || session.stateError ? <JobView key={session.id} session={session} derived={derived} /> : <p className="muted">Učitavam katalog…</p>
       ) : (
-        <p className="muted">Nema otvorenog posla. Lista sačuvanih poslova stiže u fazi 4; za sada se radi s jednim uvezenim fajlom.</p>
+        <JobList onOpen={(id) => void guarded(doOpen(id))} />
       )}
-      {waiting && (
-        <div className="overlay">
-          <div className="dialog" role="dialog" aria-modal="true" aria-label="Neodbačene izmene" data-testid="discard-dialog">
-            <h2>Odbaciti izmene?</h2>
-            <p>Otvoreni posao ima izmene koje nisu sačuvane (čuvanje poslova stiže u fazi 4). {waiting === 'close' ? 'Zatvaranjem' : 'Uvozom drugog fajla'} one se gube.</p>
-            <div className="dialog-actions">
-              <button type="button" className="btn primary" data-testid="discard-confirm" onClick={() => apply(waiting)}>Odbaci izmene</button>
-              <button type="button" className="btn" data-testid="discard-cancel" onClick={() => setWaiting(null)}>Odustani</button>
-            </div>
-          </div>
-        </div>
+      {duplicate && dup && (
+        <ConfirmDialog
+          title="Ovaj fajl je već uvezen"
+          testId="duplicate-dialog"
+          actions={[
+            { label: 'Otvori postojeći posao', testId: 'duplicate-open', kind: 'primary', onClick: () => { setDuplicate(null); void guarded(doOpen(dup.id)); } },
+            { label: 'Napravi novi posao', testId: 'duplicate-new', onClick: () => { const f = duplicate.file; setDuplicate(null); void guarded(doCreate(f)); } },
+            { label: 'Odustani', testId: 'duplicate-cancel', onClick: () => setDuplicate(null) },
+          ]}
+        >
+          <p>
+            Fajl „{duplicate.file.name}" je isti kao izvor posla „{dup.name}" ({formatDateTime(dup.createdAt)})
+            {duplicate.existing.length > 1 ? ` i još ${duplicate.existing.length - 1} ${duplicate.existing.length === 2 ? 'posla' : 'poslova'}` : ''}.
+            Možete otvoriti postojeći posao sa svim izmenama ili napraviti nov od početka.
+          </p>
+        </ConfirmDialog>
+      )}
+      {blocked && (
+        <ConfirmDialog
+          title="Izmene posla nisu sačuvane"
+          testId="blocked-dialog"
+          actions={[
+            { label: 'Pokušaj ponovo', testId: 'blocked-retry', kind: 'primary', onClick: () => { const r = blocked; setBlocked(null); void guarded(r); } },
+            { label: 'Nastavi bez čuvanja', testId: 'blocked-force', kind: 'danger', onClick: () => { const r = blocked; setBlocked(null); void guarded(r, true); } },
+            { label: 'Ostani u poslu', testId: 'blocked-cancel', onClick: () => setBlocked(null) },
+          ]}
+        >
+          <p>Poslednje izmene otvorenog posla nisu upisane u bazu. Ako nastavite bez čuvanja, te izmene se gube.</p>
+        </ConfirmDialog>
       )}
     </div>
   );

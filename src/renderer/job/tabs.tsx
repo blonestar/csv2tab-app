@@ -4,7 +4,8 @@ import type { WtCatalog } from '@core/catalog';
 import type { InputEncoding } from '@core/encoding';
 import type { JobState } from '../../shared/job';
 import { MaterialPicker } from '../components/MaterialPicker';
-import type { ExportLogEntry } from '../session';
+import type { JobExports } from '../../shared/jobs';
+import { formatDateTime } from '../format';
 import type { DerivedJob, SourceFile } from './derive';
 import { choiceOf, withAutoMapping, withChoice, withDelimiter, withEncoding, withMappingField, withMerge, withSheet } from './state';
 
@@ -22,6 +23,14 @@ export function MaterialsTab({ catalog, state, derived, setState }: TabProps & {
   const isTab = derived.source.tab !== undefined;
   return (
     <table className="grid materials-table" data-testid="materials-table">
+      <colgroup>
+        <col className="c-src" />
+        <col className="c-n" />
+        <col className="c-wt" />
+        <col className="c-band" />
+        <col className="c-grain" />
+        <col />
+      </colgroup>
       <thead>
         <tr>
           <th>Materijal iz fajla</th>
@@ -218,25 +227,52 @@ export function SourceTab({ file, state, derived, setState }: TabProps) {
 }
 
 // ---------- Izvozi ----------
-export function ExportsTab({ log }: { log: ExportLogEntry[] }) {
-  if (!log.length) return <p className="muted">U ovoj sesiji još ništa nije izvezeno. Spisak se čuva tek kad stignu sačuvani poslovi (faza 4).</p>;
-  const fmt = new Intl.DateTimeFormat('sr-Latn', { dateStyle: 'short', timeStyle: 'medium' });
+const OUTPUT_LABEL = { never: 'nije izvezen', current: 'izvezen, nepromenjen', changed: 'menjan posle izvoza' } as const;
+
+export function ExportsTab({ exports }: { exports: JobExports }) {
   return (
-    <table className="grid" data-testid="exports-table">
-      <thead>
-        <tr><th>Vreme</th><th>Fajl</th><th>Zapisa</th><th>Ishod</th><th>Folder</th></tr>
-      </thead>
-      <tbody>
-        {log.map((e, i) => (
-          <tr key={i}>
-            <td>{fmt.format(e.time)}</td>
-            <td>{e.name}</td>
-            <td>{e.count}</td>
-            <td>{e.result === 'written' ? 'upisano' : 'isti fajl već postoji'}</td>
-            <td>{e.folder}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="exports">
+      <h2>Fajlovi posla</h2>
+      {exports.outputs.length === 0 ? (
+        <p className="muted">Posao trenutno nema nijedan izlazni fajl.</p>
+      ) : (
+        <table className="grid" data-testid="outputs-table">
+          <thead>
+            <tr><th>Fajl</th><th>Materijal</th><th>Zapisa</th><th>Stanje</th></tr>
+          </thead>
+          <tbody>
+            {exports.outputs.map((o) => (
+              <tr key={o.name} data-name={o.name} data-state={o.state}>
+                <td>{o.name}</td>
+                <td>{o.material || '(bez materijala)'}</td>
+                <td>{o.count}</td>
+                <td><span className={`status ${o.state}`}>{OUTPUT_LABEL[o.state]}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <h2>Istorija izvoza</h2>
+      {exports.exports.length === 0 ? (
+        <p className="muted">Ovaj posao još nije izvožen.</p>
+      ) : (
+        <table className="grid exports-history" data-testid="exports-table">
+          <thead>
+            <tr><th>Vreme</th><th>Fajl</th><th>Zapisa</th><th>Ishod</th><th>Folder</th></tr>
+          </thead>
+          <tbody>
+            {exports.exports.map((e) => (
+              <tr key={e.id} data-name={e.fileName}>
+                <td>{formatDateTime(e.exportedAt)}</td>
+                <td title={e.fileName}>{e.fileName}</td>
+                <td>{e.recordCount}</td>
+                <td>{e.result === 'written' ? 'upisano' : 'isti fajl već postoji'}</td>
+                <td title={e.folder}>{e.folder}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }

@@ -47,7 +47,7 @@ export function Settings() {
           <button type="button" className="btn" data-testid="choose-folder" onClick={chooseFolder}>Izaberi…</button>
         </div>
       </fieldset>
-      <p className="muted">Ostali folderi, tabela šifara kantovanja i pravila stižu u fazi 5.</p>
+      <p className="muted">Ostali folderi, tabela šifara kantovanja i pravila još nisu dostupni.</p>
     </>
   );
 }

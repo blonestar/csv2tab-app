@@ -50,7 +50,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 190px;
+  width: 150px;
   padding: 10px 8px;
   background: var(--side);
   border-right: 1px solid var(--line);
@@ -85,7 +85,7 @@ body {
   flex: 1;
   flex-direction: column;
   min-width: 0;
-  padding: 18px 24px;
+  padding: 16px 20px;
   overflow: auto;
 }
 
@@ -225,8 +225,15 @@ select, input[type='text'], input[type='number'] {
 .warn-line { margin: 4px 0; color: var(--warn); }
 
 .jobview { display: flex; flex: 1; flex-direction: column; min-height: 0; }
-.jobhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.jobactions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.pagehead { margin-bottom: 8px; }
+.jobhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.jobname { flex: 1 1 220px; min-width: 0; padding: 3px 6px; font-size: 1.15rem; font-weight: 600; border-color: transparent; }
+.jobname:hover, .jobname:focus { border-color: var(--line); }
+.jobsub { display: flex; align-items: center; gap: 12px; margin: 4px 0 6px; }
+.jobnote { flex: 1 1 260px; min-width: 0; max-width: 520px; padding: 2px 6px; border-color: transparent; }
+.jobnote:hover, .jobnote:focus { border-color: var(--line); }
+.jobsub .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jobactions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 0 4px; }
 .jobactions .banner { flex-basis: 100%; margin: 0; }
 .badge { padding: 0 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 0.8em; }
 .issues { margin: 6px 0; font-size: 0.9em; }
@@ -252,19 +259,37 @@ select, input[type='text'], input[type='number'] {
 .table-scroll { flex: 1; min-height: 120px; overflow: auto; border: 1px solid var(--line); }
 .table-scroll .grid { border-collapse: separate; border-spacing: 0; }
 .table-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--side); }
-.parts-table td, .parts-table th { padding: 0 6px; height: 30px; }
+/* Tabela zapisa: fiksne širine malih kolona, Oznaka i Materijal dele ostatak; na minimalnoj širini prozora se skroluje. */
+.parts-table { table-layout: fixed; min-width: 880px; }
+.parts-table td, .parts-table th { padding: 0 4px; height: 30px; overflow: hidden; text-overflow: ellipsis; }
+.parts-table th { white-space: normal; line-height: 1.15; }
+.parts-table col.c-rn { width: 36px; }
+.parts-table col.c-dim { width: 78px; }
+.parts-table col.c-swap { width: 28px; }
+.parts-table col.c-edge { width: 130px; }
+.parts-table col.c-tex { width: 68px; }
+.parts-table col.c-qty { width: 56px; }
+.parts-table col.c-mat { width: 110px; }
+.parts-table col.c-mark { width: 20px; }
+.parts-table col.c-act { width: 28px; }
 .parts-table td.rn, .raw-table td.rn { color: var(--muted); text-align: right; }
-.parts-table .num { width: 84px; }
-.parts-table .qty { width: 64px; }
-.parts-table .name { width: 190px; }
-.parts-table select { max-width: 190px; }
-.parts-table td.mat { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.parts-table input.num, .parts-table input.qty, .parts-table input.name, .parts-table select { width: 100%; min-width: 0; }
+.parts-table input[type='checkbox'] { margin: 0 0 0 20px; }
+.parts-table td.mat { overflow: hidden; text-overflow: ellipsis; }
 td.edit.edited { background: var(--edit); }
 tr.row-edited td.rn { color: var(--accent); font-weight: 600; }
 .warnmark { color: var(--warn); font-weight: 700; cursor: help; }
 
-.materials-table td { padding: 6px 10px 6px 0; vertical-align: top; white-space: normal; }
-.picker { position: relative; display: flex; align-items: center; gap: 4px; min-width: 250px; }
+/* Tabela materijala: procentualne širine u fiksnom rasporedu, polja se prilagođavaju ćeliji. */
+.materials-table { table-layout: fixed; min-width: 780px; }
+.materials-table td { padding: 6px 8px 6px 0; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+.materials-table col.c-src { width: 19%; }
+.materials-table col.c-n { width: 56px; }
+.materials-table col.c-wt { width: 27%; }
+.materials-table col.c-band { width: 15%; }
+.materials-table col.c-grain { width: 128px; }
+.materials-table select { width: 100%; }
+.picker { position: relative; display: flex; align-items: center; gap: 4px; min-width: 0; }
 .picker input { flex: 1; min-width: 0; }
 .picker-list {
   position: absolute;
@@ -285,8 +310,7 @@ tr.row-edited td.rn { color: var(--accent); font-weight: 600; }
 .picker-list li { padding: 3px 8px; white-space: nowrap; cursor: pointer; }
 .picker-list li:hover { background: var(--hover); }
 .fname { display: flex; align-items: center; gap: 4px; }
-.fname input { width: 170px; }
-.materials-table select { max-width: 190px; }
+.fname input { flex: 1; min-width: 0; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-bottom: 6px; }
 .mapping legend { padding: 0 6px; }
 .mapping-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 16px; }
@@ -334,3 +358,33 @@ tr.row-edited td.rn { color: var(--accent); font-weight: 600; }
 .dialog-body { flex: 1; min-height: 0; overflow: auto; }
 .dialog-actions { display: flex; gap: 8px; margin-top: 12px; }
 td.edit.edited input, td.edit.edited select { background: var(--edit); }
+
+/* ---------- lista poslova ---------- */
+.listbar { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.listbar .search { flex: 1; max-width: 420px; }
+.list-scroll { flex: 1; min-height: 120px; }
+.job-table { table-layout: fixed; }
+.job-table th, .job-table td { padding: 0 8px; height: 30px; overflow: hidden; text-overflow: ellipsis; }
+.job-table th.r, .job-table td.r { text-align: right; }
+.job-table .c-name { width: 26%; }
+.job-table .c-src { width: 20%; }
+.job-table .c-mat { width: 22%; }
+.job-table .c-n { width: 64px; }
+.job-table .c-date { width: 140px; }
+.job-table .c-status { width: 150px; }
+/* uzak prozor: kolona sa imenom izvornog fajla se skriva, ime posla je obično isto */
+@media (max-width: 900px) { .hide-narrow { display: none; } .job-table .c-name { width: 34%; } .job-table .c-mat { width: 28%; } }
+.job-row:hover { background: var(--hover); }
+.link { max-width: 100%; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.link:hover { text-decoration: underline; }
+.status { padding: 0 6px; border: 1px solid var(--line); border-radius: 10px; font-size: 0.85em; white-space: nowrap; color: var(--muted); }
+.status.current { border-color: var(--ok); color: var(--ok); }
+.status.changed { border-color: var(--warn); color: var(--warn); }
+.savestate { font-size: 0.85em; color: var(--muted); }
+.savestate.failed { color: var(--danger); font-weight: 600; }
+.btn.danger { border-color: var(--danger); background: var(--danger); color: #fff; }
+.btn.danger:hover:not(:disabled) { filter: brightness(1.08); background: var(--danger); }
+.danger-text { margin-left: auto; color: var(--danger); }
+.dialog-text p { margin: 0; }
+.exports h2:first-child { margin-top: 0; }
+.exports-history td { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
