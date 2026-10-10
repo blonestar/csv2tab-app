@@ -1,10 +1,14 @@
 // Smoke test izgrađene aplikacije (Playwright _electron): prozor učitava app://csv2tab/, most radi, jezgro u
 // rendereru daje iste bajtove za CSV, ODS i XLSX, a .tab round trip je bajt-identičan. Tema promenjena kroz interfejs
-// preživljava restart (baza), a katalog se prikazuje. Faza 3: uvoz (dijalog i prevlačenje), izvoz u WT folder,
-// pitanje sa razlikama pre prepisivanja i prozor za poređenje. Dijalozi se zaobilaze promenljivama okruženja
-// (CSV2TAB_TEST_*) koje glavni proces poštuje samo uz CSV2TAB_TEST=1. Pokreće se posle `npm run build`.
+// preživljava restart (baza), a katalog se prikazuje. Uvoz (dijalog i prevlačenje), izvoz u WT folder, pitanje sa
+// razlikama pre prepisivanja i prozor za poređenje. Poslovi: automatsko čuvanje, lista sa pretragom, ponovno otvaranje
+// posle restarta bez originalnog fajla (isti .tab), stanje izvoza, isti fajl dvaput, brisanje, greška čuvanja i
+// neispravno sačuvano stanje. Dijalozi se zaobilaze promenljivama okruženja (CSV2TAB_TEST_*) koje glavni proces
+// poštuje samo uz CSV2TAB_TEST=1. Čeka se na uslove na stranici (indikator „sačuvano“), nikad na fiksno vreme.
+// Pokreće se posle `npm run build`.
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,7 +30,7 @@ const isDark = (page) => page.evaluate(() => matchMedia('(prefers-color-scheme: 
 const bodyBg = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 let app = await launch();
 try {
-  const page = await app.firstWindow();
+  let page = await app.firstWindow();
   const problems = []; // CSP prekršaji i neuhvaćene greške u bilo kom prozoru
   const watch = (p) => {
     p.on('console', (m) => { if (/Content Security Policy|Refused to/i.test(m.text())) problems.push(m.text()); });
@@ -43,7 +47,7 @@ try {
     node: typeof require + typeof process,
     ipc: typeof window.ipcRenderer,
   }));
-  assert.deepEqual(surface, { api: ['app', 'catalog', 'compare', 'export', 'files', 'settings'], node: 'undefinedundefined', ipc: 'undefined' });
+  assert.deepEqual(surface, { api: ['app', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'settings'], node: 'undefinedundefined', ipc: 'undefined' });
   const info = await page.evaluate(() => window.api.app.info());
   assert.equal(info.testMode, true);
   assert.match(info.electron, /^44\./);
@@ -109,7 +113,7 @@ try {
   }
 
   // baza: verzija šeme i SQLite u "O programu"
-  assert.equal(info.schemaVersion, 1);
+  assert.equal(info.schemaVersion, 2);
   assert.match(info.sqliteVersion, /^3\.\d+\.\d+/);
   await page.click('nav button:has-text("O programu")');
   await page.waitForSelector('[data-testid=app-info]');
@@ -156,22 +160,32 @@ try {
   await waitTheme(page, keep);
   console.log(`tema promenjena na ${keep} (sistemska je ${systemDark ? 'dark' : 'light'}), pozadina:`, keepBg);
 
-  // ---------- faza 3: uvoz, izvoz, poređenje ----------
+  // ---------- poslovi: uvoz, automatsko čuvanje, izvoz ----------
   const wtA = mkdtempSync(join(tmpdir(), 'csv2tab-wt-a-'));
   const wtB = mkdtempSync(join(tmpdir(), 'csv2tab-wt-b-'));
-  extraDirs.push(wtA, wtB);
+  const wtC = mkdtempSync(join(tmpdir(), 'csv2tab-wt-c-'));
+  const wtD = mkdtempSync(join(tmpdir(), 'csv2tab-wt-d-'));
+  const srcDir = mkdtempSync(join(tmpdir(), 'csv2tab-src-'));
+  extraDirs.push(wtA, wtB, wtC, wtD, srcDir);
   const setEnv = (k, v) => app.evaluate((_, [key, val]) => { process.env[key] = val; }, [k, v]);
   const nav = (name) => page.click(`nav button:has-text("${name}")`);
   const sessionId = () => page.evaluate(() => document.querySelector('[data-testid=jobview]')?.dataset.session ?? null);
-  // uvoz kroz dijalog; čeka se NOV posao (id sesije se menja), ne samo ime fajla
+  const jobId = () => page.evaluate(() => document.querySelector('[data-testid=jobview]')?.dataset.job ?? null);
+  const waitSaved = () => page.waitForSelector('[data-testid=save-state][data-state=saved]');
+  const jobsApi = (text = '') => page.evaluate((t) => window.api.jobs.list({ text: t, offset: 0, limit: 200 }), text);
+  // povratak na listu (zatvaranje posla ga prvo čuva)
+  const toList = async () => {
+    await nav('Poslovi');
+    if (await page.$('[data-testid=jobview]')) await page.click('[data-testid=close-job]');
+    await page.waitForSelector('[data-testid=import]');
+  };
+  // uvoz kroz dijalog; vraća id novog (ili otvorenog) posla
   const importFile = async (path) => {
-    const before = await sessionId();
+    await toList();
     await setEnv('CSV2TAB_TEST_IMPORT', path);
     await page.click('[data-testid=import]');
-    await page.waitForFunction((b) => {
-      const id = document.querySelector('[data-testid=jobview]')?.dataset.session;
-      return id && id !== b;
-    }, before);
+    await page.waitForSelector('[data-testid=jobview]');
+    return jobId();
   };
   const waitRecords = (n) =>
     page.waitForFunction((c) => document.querySelector('[data-testid=parts-summary]')?.dataset.count === String(c), n);
@@ -190,36 +204,76 @@ try {
   const direct = (name, kind, bytes) =>
     page.evaluate(({ b, k }) => Array.from(window.__csv2tab.convertToTab(new Uint8Array(b), k)), { b: bytes, k: kind });
   const disk = (dir, name) => [...readFileSync(join(dir, name))];
+  const dropOnPage = (name, bytes) =>
+    page.evaluate(
+      ({ name, bytes }) => {
+        const dt = new DataTransfer();
+        dt.items.add(new File([new Uint8Array(bytes)], name));
+        const z = document.querySelector('[data-testid=jobs-page]');
+        z.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+        z.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+      },
+      { name, bytes },
+    );
+  const chooseWtFolder = async (dir) => {
+    await nav('Podešavanja');
+    await setEnv('CSV2TAB_TEST_FOLDER', dir);
+    await page.click('[data-testid=choose-folder]');
+    await page.waitForFunction((d) => document.querySelector('[data-testid=wt-folder]')?.textContent === d, dir);
+  };
   const KASMIR = 'Kasmir Kronospan 012-010';
   const HAND = 'Kronospan Kasmir.tab';
 
-  // renderer ne može da zada folder ni da prođe pogrešne argumente
+  // renderer ne može da zada folder ni da prođe pogrešne argumente (stare i nove operacije)
   await nav('Podešavanja');
-  const guard = await page.evaluate(async () => {
+  const guard = await page.evaluate(async (handTab) => {
     const t = (fn) => fn().then(() => 'ok', (e) => String(e.message));
+    const goodState = { version: 1, encoding: 'auto', delimiter: 'auto', sheet: 0, mapping: 'auto', merge: true, materials: {}, edits: {} };
+    const csv = (kind) => ({ name: 'a.csv', kind, bytes: new Uint8Array(3) });
     return [
       await t(() => window.api.settings.set('wtFolder', '/tmp')),
       await t(() => window.api.files.chooseFolder('theme')),
       await t(() => window.api.files.open('bilo-sta')),
-      await t(() => window.api.export.write([{ name: '../x', bytes: new Uint8Array(300) }], [])),
+      await t(() => window.api.export.write([{ name: '../x', bytes: new Uint8Array(300) }], [], null)),
       await t(() => window.api.export.check([{ name: 'x', bytes: 'nije bajt' }])),
       await t(() => window.api.compare.get('../../etc/passwd')),
       await t(() => window.api.compare.open({ aName: 'a', bName: 'b', a: [{ dim1: -1 }], b: [] })),
+      await t(() => window.api.jobs.get(0)),
+      await t(() => window.api.jobs.get('1')),
+      await t(() => window.api.jobs.get(12345)),
+      await t(() => window.api.jobs.list({ text: '', offset: 0, limit: 9999 })),
+      await t(() => window.api.jobs.list({ text: 'x', offset: -1, limit: 10 })),
+      await t(() => window.api.jobs.update(1, { ime: 'x' })),
+      await t(() => window.api.jobs.update(1, { name: '   ' })),
+      await t(() => window.api.jobs.delete(-5)),
+      await t(() => window.api.jobs.delete(12345)),
+      await t(() => window.api.jobs.findBySource('nije-hes')),
+      await t(() => window.api.jobs.create(csv('xlsx'), { state: goodState, parts: [], outputs: [] })),
+      await t(() => window.api.jobs.create(csv('csv'), { state: { ...goodState, version: 2 }, parts: [], outputs: [] })),
+      await t(() => window.api.jobs.create(csv('csv'), { state: goodState, parts: [{ dim1: -1 }], outputs: [] })),
+      await t(() => window.api.jobs.save(12345, { state: goodState, parts: [], outputs: [] })),
+      await t(() => window.api.export.write([{ name: 'x.tab', bytes: new Uint8Array(handTab), material: 'm' }], [], 12345)),
     ];
-  });
-  assert.ok(guard.every((m) => m !== 'ok'), `neispravan poziv prošao: ${guard}`);
+  }, fx(HAND));
+  assert.ok(guard.every((m) => m !== 'ok'), `neispravan poziv prošao: ${guard.map((m, i) => `${i}:${m}`).filter((m) => m.endsWith(':ok'))}`);
   assert.match(guard[0], /izborom foldera/);
+  assert.match(guard[20], /Posao ne postoji/);
   assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), '');
-
-  // 1. uvoz CSV kroz dijalog; WT folder još nije zadat
+  assert.equal((await jobsApi()).total, 0, 'neispravni pozivi su napravili posao');
   await nav('Poslovi');
-  await importFile(fixturePath(`${KASMIR}.csv`));
+  await page.waitForSelector('[data-testid=job-empty]');
+
+  // 1. uvoz CSV kroz dijalog: odmah postaje posao u bazi; WT folder još nije zadat
+  const idKasmir = await importFile(fixturePath(`${KASMIR}.csv`));
   await waitRecords(14);
+  await waitSaved();
+  assert.equal((await jobsApi()).total, 1);
+  assert.equal(await page.inputValue('[data-testid=job-name]'), KASMIR);
   await openTab('materials');
   await page.waitForSelector('[data-testid=materials-table] tr[data-material=U702]');
   const outName = (await page.textContent('[data-testid=out-name]')).trim();
   assert.match(outName, /\.tab$/);
-  console.log(`uvoz CSV: 14 zapisa, materijal U702, izlazni fajl "${outName}"`);
+  console.log(`uvoz CSV: odmah posao #${idKasmir} u bazi, 14 zapisa, materijal U702, izlazni fajl "${outName}"`);
   await openTab('parts');
   await page.click('[data-testid=export]');
   await waitBanner('problem');
@@ -233,16 +287,20 @@ try {
   const expected = await direct(KASMIR, 'csv', kasmirCsv);
   assert.deepEqual(disk(wtA, outName), expected, 'izvezeni fajl != bajtovi jezgra');
   console.log(`izvoz: ${outName} (${expected.length} B) jednak bajtovima jezgra`);
+  await page.waitForSelector('[data-testid=job-status][data-status=current]');
   await openTab('exports');
   await page.waitForSelector('[data-testid=exports-table] tbody tr');
+  assert.equal(await page.locator('[data-testid=exports-table] tbody tr').count(), 1);
+  assert.doesNotMatch(await page.textContent('[data-testid=jobview]'), /faz[aei] \d/i, 'broj faze u interfejsu');
   await openTab('parts');
 
-  // 2. izmena ćelije: pitanje sa razlikama; odustajanje ne dira fajl, potvrda ga prepisuje
+  // 2. izmena ćelije: pitanje sa razlikama; odustajanje ne dira fajl, potvrda ga prepisuje; izmena se čuva sama
   const qty0 = page.locator('tr[data-key] input[data-field=qty]').first();
   await qty0.fill('5');
   await qty0.press('Enter');
   await waitEdited(1);
   await page.waitForSelector('tr[data-key] td.edited');
+  await waitSaved();
   await page.click('[data-testid=export]');
   await page.waitForSelector('[data-testid=overwrite-dialog] [data-testid=diff-summary]');
   assert.deepEqual(await summary(), { same: 13, changed: 1, onlyA: 0, onlyB: 0 });
@@ -250,6 +308,8 @@ try {
   await page.click('[data-testid=overwrite-cancel]');
   await page.waitForSelector('[data-testid=overwrite-dialog]', { state: 'detached' });
   assert.deepEqual(disk(wtA, outName), expected, 'fajl izmenjen posle odustajanja');
+  // odustajanje nije izvoz: posao je i dalje menjan posle poslednjeg izvoza
+  await page.waitForSelector('[data-testid=job-status][data-status=changed]');
   await page.click('[data-testid=export]');
   await page.waitForSelector('[data-testid=overwrite-confirm]');
   await page.click('[data-testid=overwrite-confirm]');
@@ -258,7 +318,11 @@ try {
   edited[165 + 31] = 5; // qty prvog zapisa (uint16 LE, pomeraj 31) 1 -> 5
   assert.deepEqual(disk(wtA, outName), edited, 'fajl ne odražava izmenu');
   assert.deepEqual(readdirSync(wtA), [outName], 'zaostao privremeni fajl');
-  console.log('izmena ćelije: pitanje sa razlikama, odustajanje ne menja fajl, potvrda upisuje izmenu');
+  await page.waitForSelector('[data-testid=job-status][data-status=current]');
+  await openTab('exports');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid=exports-table] tbody tr').length === 2);
+  await openTab('parts');
+  console.log('izmena ćelije: sačuvana sama, pitanje sa razlikama, odustajanje ne menja fajl ni stanje izvoza, potvrda upisuje izmenu');
 
   // 3. prozor za poređenje: posao naspram ručno pravljenog .tab-a (u prozoru sa istim bezbednosnim podešavanjima)
   await setEnv('CSV2TAB_TEST_COMPARE', fixturePath(HAND));
@@ -277,34 +341,48 @@ try {
   assert.equal(cmpSum.same, '3');
   assert.deepEqual(await cmp.evaluate(() => ({ node: typeof require + typeof process, api: Object.keys(window.api).sort() })), {
     node: 'undefinedundefined',
-    api: ['app', 'catalog', 'compare', 'export', 'files', 'settings'],
+    api: ['app', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'settings'],
   });
   assert.equal(await cmp.locator('.diff-table tr.changed').count(), 11);
   console.log('prozor poređenja:', JSON.stringify(cmpSum));
   await cmp.close();
+  // zatvaranje prozora poređenja ne dira glavni prozor ni čuvanje
+  assert.equal(await jobId(), idKasmir);
+  await waitSaved();
 
-  // 4. novi uvoz istog fajla nad izmenjenim poslom: traži potvrdu; potvrda ga zamenjuje
+  // 4. isti fajl ponovo: pitanje (ne tiho dupliranje, ne tiha zabrana); otvaranje postojećeg čuva izmene
+  await toList();
   await setEnv('CSV2TAB_TEST_IMPORT', fixturePath(`${KASMIR}.csv`));
-  const idBefore = await sessionId();
   await page.click('[data-testid=import]');
-  await page.waitForSelector('[data-testid=discard-dialog]');
-  assert.equal(await sessionId(), idBefore, 'posao zamenjen bez potvrde');
-  await page.click('[data-testid=discard-cancel]');
-  await page.waitForSelector('[data-testid=discard-dialog]', { state: 'detached' });
-  assert.equal(await sessionId(), idBefore);
+  await page.waitForSelector('[data-testid=duplicate-dialog]');
+  assert.ok((await page.textContent('[data-testid=duplicate-dialog]')).includes(KASMIR));
+  assert.equal(await page.$('[data-testid=jobview]'), null, 'posao otvoren pre odgovora');
+  assert.equal((await jobsApi()).total, 1, 'dupli posao napravljen pre odgovora');
+  await page.click('[data-testid=duplicate-cancel]');
+  await page.waitForSelector('[data-testid=duplicate-dialog]', { state: 'detached' });
+  assert.equal((await jobsApi()).total, 1);
   await page.click('[data-testid=import]');
-  await page.waitForSelector('[data-testid=discard-confirm]');
-  await page.click('[data-testid=discard-confirm]');
-  await page.waitForFunction((b) => document.querySelector('[data-testid=jobview]')?.dataset.session !== b, idBefore);
+  await page.waitForSelector('[data-testid=duplicate-open]');
+  await page.click('[data-testid=duplicate-open]');
+  await page.waitForSelector('[data-testid=jobview]');
+  assert.equal(await jobId(), idKasmir);
+  await waitRecords(14);
+  await waitEdited(1); // ručna izmena je u sačuvanom poslu
+  await toList();
+  await page.click('[data-testid=import]');
+  await page.waitForSelector('[data-testid=duplicate-new]');
+  await page.click('[data-testid=duplicate-new]');
+  await page.waitForFunction((id) => { const j = document.querySelector('[data-testid=jobview]'); return j && j.dataset.job !== id; }, idKasmir);
+  const idNew = await jobId();
   await waitRecords(14);
   await waitEdited(0);
+  await waitSaved();
+  assert.equal((await jobsApi()).total, 2);
+  console.log(`isti fajl ponovo: pitanje; odustani ne pravi posao, "otvori postojeći" vraća #${idKasmir} sa izmenom, "novi posao" pravi #${idNew}`);
 
   // 5. u WT folderu je ručno pravljen .tab pod ciljnim imenom: razlike se prikazuju, ništa se ne prepisuje bez potvrde
   copyFileSync(fixturePath(HAND), join(wtB, outName));
-  await nav('Podešavanja');
-  await setEnv('CSV2TAB_TEST_FOLDER', wtB);
-  await page.click('[data-testid=choose-folder]');
-  await page.waitForFunction((d) => document.querySelector('[data-testid=wt-folder]')?.textContent === d, wtB);
+  await chooseWtFolder(wtB);
   await nav('Poslovi');
   await waitRecords(14); // posao je preživeo odlazak na drugu stranicu
   await page.click('[data-testid=export]');
@@ -321,11 +399,12 @@ try {
   assert.ok(changedText.some((t) => t.includes('2323 × 414 ≠ 2423 × 414')), changedText.join(' | '));
   assert.ok(changedText.some((t) => t.includes('kant 1: 2 ≠ 4')), changedText.join(' | '));
   assert.ok(changedText.some((t) => t.includes('dimenzije su zamenjene')), changedText.join(' | '));
-  // otkačen fajl se ne prepisuje
+  // otkačen fajl se ne prepisuje i ne beleži kao izvoz
   await page.uncheck('[data-testid=diff-item] input[type=checkbox]');
   await page.click('[data-testid=overwrite-confirm]');
   await waitBanner('error');
   assert.deepEqual(disk(wtB, outName), handBytes, 'otkačen fajl je prepisan');
+  assert.equal((await jobsApi()).items.find((j) => j.id === Number(idNew)).exportStatus, 'never', 'preskočen izvoz je zabeležen');
   // posebno okno iz pitanja
   await page.click('[data-testid=export]');
   await page.waitForSelector('[data-testid=overwrite-dialog]');
@@ -339,32 +418,23 @@ try {
   await page.click('[data-testid=overwrite-confirm]');
   await waitBanner('ok');
   assert.deepEqual(disk(wtB, outName), expected, 'potvrđeno prepisivanje nije upisalo novi fajl');
-  console.log('postojeći ručni .tab: poznate razlike (10 zapisa) prikazane, nepotvrđen i otkačen nije prepisan, potvrđen jeste');
+  console.log('postojeći ručni .tab: poznate razlike (10 zapisa) prikazane, nepotvrđen i otkačen nije prepisan ni zabeležen, potvrđen jeste');
 
   // 6. ODS kroz dijalog, XLSX prevlačenjem; pogrešan tip se odbija
-  await importFile(fixturePath(`${KASMIR}.ods`));
+  const idOds = await importFile(fixturePath(`${KASMIR}.ods`));
   await waitRecords(14);
-  const dropOnPage = (name, bytes) =>
-    page.evaluate(
-      ({ name, bytes }) => {
-        const dt = new DataTransfer();
-        dt.items.add(new File([new Uint8Array(bytes)], name));
-        const z = document.querySelector('[data-testid=jobs-page]');
-        z.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
-        z.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
-      },
-      { name, bytes },
-    );
-  const odsId = await sessionId();
+  const odsSession = await sessionId();
   await dropOnPage(`${KASMIR}.xlsx`, fx(`${KASMIR}.xlsx`));
   await page.waitForFunction((b) => {
     const j = document.querySelector('[data-testid=jobview]');
     return j && j.dataset.session !== b && j.dataset.file.endsWith('.xlsx');
-  }, odsId);
+  }, odsSession);
   await waitRecords(14);
+  const idXlsx = await jobId();
   await dropOnPage('slika.png', [1, 2, 3]);
   await page.waitForSelector('[data-testid=import-error]');
-  console.log('uvoz ODS (dijalog) i XLSX (prevlačenje): po 14 zapisa; .png odbijen');
+  assert.equal((await jobsApi()).total, 4);
+  console.log('uvoz ODS (dijalog) i XLSX (prevlačenje): po 14 zapisa, svaki svoj posao; .png odbijen');
 
   // 7. .tab kao posao: zapisi se prikazuju, Izvor kaže da nema izvora
   await importFile(fixturePath(HAND));
@@ -374,41 +444,310 @@ try {
   await page.waitForSelector('tr[data-key]');
   console.log('.tab uvezen kao posao');
 
-  // 8. veliki spisak: 6000 zapisa, a u DOM-u samo vidljivi redovi; kraj spiska se dostiže skrolovanjem
+  // 8. veliki spisak: 6000 zapisa, a u DOM-u samo vidljivi redovi; izmena ostaje brza i čuva se sama
   const N = 6000;
   const big = ['Material;Length - raw;Width - raw;Quantity;Designation']
     .concat(Array.from({ length: N }, (_, i) => `U702;${1000 + i} mm;${300 + (i % 50)} mm;1;P${i}`))
     .join('\n');
+  const t0 = Date.now();
   await dropOnPage('veliki.csv', [...new TextEncoder().encode(big)]);
   await page.waitForFunction((n) => document.querySelector('[data-testid=parts-summary]')?.dataset.count === String(n), N, { timeout: 30000 });
+  await waitSaved();
+  const createMs = Date.now() - t0;
   const rendered = await page.locator('tr[data-key]').count();
   assert.ok(rendered > 5 && rendered < 120, `u DOM-u ${rendered} redova`);
   await page.evaluate(() => { const s = document.querySelector('[data-testid=parts-scroll]'); s.scrollTop = s.scrollHeight; });
   await page.waitForFunction((n) => [...document.querySelectorAll('tr[data-key] td.rn')].some((td) => td.textContent === String(n)), N);
   assert.ok((await page.locator('tr[data-key]').count()) < 120);
-  console.log(`veliki spisak: ${N} zapisa, u DOM-u ${rendered} redova, kraj dostupan skrolom`);
+  console.log(`veliki spisak: ${N} zapisa, u DOM-u ${rendered} redova, kraj dostupan skrolom; uvoz do sačuvanog posla ${createMs} ms`);
+  // sonda: vreme od Enter do prikaza izmene, dugi zadaci glavne niti i trajanje čuvanja
+  await page.evaluate(() => { const s = document.querySelector('[data-testid=parts-scroll]'); s.scrollTop = 0; });
+  await page.evaluate(() => {
+    const probe = (window.__probe = { states: [], long: [], keyAt: 0, shownAt: 0 });
+    new PerformanceObserver((l) => { for (const e of l.getEntries()) probe.long.push(Math.round(e.duration)); }).observe({ entryTypes: ['longtask'] });
+    const ind = document.querySelector('[data-testid=save-state]');
+    new MutationObserver(() => probe.states.push([ind.dataset.state, performance.now()])).observe(ind, { attributes: true, attributeFilter: ['data-state'] });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Enter') probe.keyAt = performance.now(); }, true);
+    const sum = document.querySelector('[data-testid=parts-summary]');
+    new MutationObserver(() => { if (sum.dataset.edited === '1' && !probe.shownAt) probe.shownAt = performance.now(); }).observe(sum, { attributes: true, attributeFilter: ['data-edited'] });
+  });
+  const bigQty = page.locator('tr[data-key] input[data-field=qty]').first();
+  await bigQty.fill('3');
+  await bigQty.press('Enter');
+  await waitEdited(1);
+  await page.waitForFunction(() => window.__probe.states.some(([s]) => s === 'saved'));
+  const pr = await page.evaluate(() => window.__probe);
+  const at = (s) => pr.states.find(([x]) => x === s)?.[1];
+  const shown = pr.shownAt - pr.keyAt;
+  const saveMs = at('saved') - at('saving');
+  console.log(
+    `veliki posao, izmena ćelije: Enter -> prikaz ${shown.toFixed(0)} ms; stanja ${pr.states.map(([s, t]) => `${s}@${(t - pr.keyAt).toFixed(0)}`).join(' ')}; ` +
+      `upis ${saveMs.toFixed(0)} ms; dugi zadaci glavne niti: ${pr.long.length ? pr.long.join(', ') + ' ms' : 'nijedan'}`,
+  );
+  assert.ok(shown < 1500, `izmena u velikom poslu se prikazuje ${shown} ms`);
+  assert.ok(saveMs < 3000, `čuvanje velikog posla ${saveMs} ms`);
+  assert.ok(pr.states.map(([s]) => s).join() === 'dirty,saving,saved' || pr.states.map(([s]) => s).includes('saved'), JSON.stringify(pr.states));
 
   assert.deepEqual(problems, [], `CSP ili greške u konzoli: ${problems.join(' | ')}`);
 
-  // restart sa istim userData: podešavanje i tema moraju da ostanu
+  // ---------- poslovi: trajnost, stanje izvoza, pretraga ----------
+  // 9. nov posao od privremene kopije fajla (ime sa dijakritikom): ručna izmena, izbor materijala, izvoz
+  const SRC = join(srcDir, 'Šupa Đurđevak.csv');
+  copyFileSync(fixturePath('Stone oak Kronospan.csv'), SRC);
+  await chooseWtFolder(wtC);
+  const idP = await importFile(SRC);
+  await waitSaved();
+  assert.equal(await page.inputValue('[data-testid=job-name]'), 'Šupa Đurđevak');
+  const countP = Number(await page.getAttribute('[data-testid=parts-summary]', 'data-count'));
+  assert.ok(countP > 10, `zapisa: ${countP}`);
+  const nameCell = page.locator('tr[data-key] input[data-field=name]').first();
+  await nameCell.fill('Šifonjer đak');
+  await nameCell.press('Enter');
+  await waitEdited(1);
+  await waitSaved();
+
+  // greška čuvanja je vidljiva, ne gubi izmenu i ponavlja se; napuštanje posla traži odluku
+  await setEnv('CSV2TAB_TEST_FAIL_SAVE', '1');
+  const qty1 = page.locator('tr[data-key] input[data-field=qty]').nth(1);
+  await qty1.fill('4');
+  await qty1.press('Enter');
+  await waitEdited(2);
+  await page.waitForSelector('[data-testid=save-state][data-state=failed]');
+  await page.waitForSelector('[data-testid=save-error]');
+  assert.match(await page.textContent('[data-testid=save-error]'), /Simulirana greška/);
+  await page.click('[data-testid=close-job]');
+  await page.waitForSelector('[data-testid=blocked-dialog]');
+  await page.click('[data-testid=blocked-cancel]');
+  await page.waitForSelector('[data-testid=blocked-dialog]', { state: 'detached' });
+  assert.equal(await jobId(), idP, 'posao je zatvoren uprkos nesačuvanim izmenama');
+  assert.equal(await page.getAttribute('[data-testid=save-state]', 'data-state'), 'failed');
+  await setEnv('CSV2TAB_TEST_FAIL_SAVE', '');
+  await page.click('[data-testid=save-retry]');
+  await waitSaved();
+  await page.waitForSelector('[data-testid=save-error]', { state: 'detached' });
+  console.log('greška čuvanja: indikator i poruka vidljivi, napuštanje posla traži odluku, ponovni pokušaj upisuje izmenu');
+
+  // izbor materijala: WT materijal iz kataloga, traka i ime fajla
+  await openTab('materials');
+  await page.fill('[data-testid=wt-material]', '103-ME3');
+  await page.press('[data-testid=wt-material]', 'Enter');
+  await page.waitForFunction(() => /103-ME3/.test(document.querySelector('[data-testid=wt-material]').value));
+  await page.selectOption('select[aria-label^="Traka za"]', { index: 1 });
+  await page.fill('[data-testid=file-name]', 'Trajni izvoz');
+  await page.waitForFunction(() => document.querySelector('[data-testid=out-name]').textContent.trim() === 'Trajni izvoz.tab');
+  await waitSaved();
+  const wtMaterialLabel = await page.inputValue('[data-testid=wt-material]');
+  await openTab('parts');
+  await page.click('[data-testid=export]');
+  await waitBanner('ok');
+  const FIRST = disk(wtC, 'Trajni izvoz.tab');
+  assert.deepEqual(readdirSync(wtC), ['Trajni izvoz.tab']);
+  await page.waitForSelector('[data-testid=job-status][data-status=current]');
+  await waitSaved();
+  console.log(`posao #${idP}: ${countP} zapisa, izmena imena, WT materijal "${wtMaterialLabel}", izvezeno ${FIRST.length} B`);
+
+  // lista bez otvaranja posla: izvezen i nepromenjen; originalni fajl se briše pre zatvaranja programa
+  await toList();
+  await page.waitForSelector(`tr[data-job-id="${idP}"][data-status=current]`);
+  rmSync(SRC);
+  assert.equal(existsSync(SRC), false);
+  const colors = (await jobsApi()).items;
+  assert.equal(colors.find((j) => j.id === Number(idKasmir)).exportStatus, 'current');
+  assert.equal(colors.find((j) => j.id === Number(idNew)).exportStatus, 'current'); // izvezen u koraku 5 (potvrđeno prepisivanje)
+  assert.equal(colors.find((j) => j.id === Number(idOds)).exportStatus, 'never');
+
+  // 10. restart bez originalnog fajla
   await app.close();
+  {
+    const db = new DatabaseSync(join(userData, 'csv2tab.db'), { readOnly: true });
+    const one = (q, ...a) => db.prepare(q).get(...a);
+    assert.equal(one('SELECT source_path FROM jobs WHERE id = ?', Number(idP)).source_path, SRC, 'putanja iz dijaloga nije zapamćena');
+    assert.equal(one('SELECT source_path FROM jobs WHERE id = ?', Number(idOds)).source_path, fixturePath(`${KASMIR}.ods`));
+    assert.equal(one('SELECT source_path FROM jobs WHERE id = ?', Number(idXlsx)).source_path, null, 'prevučen fajl ima putanju');
+    const saved = one('SELECT bytes FROM exports WHERE job_id = ? ORDER BY id DESC', Number(idP));
+    assert.deepEqual([...saved.bytes], FIRST, 'sačuvani bajtovi izvoza != fajl u folderu');
+    assert.equal(one('SELECT count(*) AS n FROM job_parts WHERE job_id = ?', Number(idP)).n, countP);
+    assert.equal(one("SELECT count(*) AS n FROM job_parts WHERE job_id = ? AND name = 'Šifonjer đak'", Number(idP)).n, 1);
+    db.close();
+    // neispravno stanje (npr. iz buduće verzije) se mora prikazati porukom, ne rušenjem
+    const rw = new DatabaseSync(join(userData, 'csv2tab.db'));
+    rw.prepare('UPDATE jobs SET state = ? WHERE id = ?').run(JSON.stringify({ version: 99, nesto: 'novo' }), Number(idNew));
+    rw.close();
+  }
   app = await launch();
-  const page2 = await app.firstWindow();
-  await page2.waitForURL('app://csv2tab/**', { timeout: 15000 });
-  await page2.waitForSelector('nav.sidebar');
-  assert.equal(await page2.evaluate(() => window.api.settings.get('theme')), keep);
-  assert.equal(await isDark(page2), keep === 'dark', 'tema nije primenjena posle restarta');
-  assert.equal(await bodyBg(page2), keepBg);
-  await page2.click('nav button:has-text("Podešavanja")');
+  page = await app.firstWindow();
+  watch(page);
+  await page.waitForURL('app://csv2tab/**', { timeout: 15000 });
+  await page.waitForSelector('nav.sidebar');
+  assert.equal(await page.evaluate(() => window.api.settings.get('theme')), keep);
+  assert.equal(await isDark(page), keep === 'dark', 'tema nije primenjena posle restarta');
+  assert.equal(await bodyBg(page), keepBg);
+  await page.click('nav button:has-text("Podešavanja")');
   // stranica učitava podešavanje asinhrono, pa se čeka na označeno polje
-  await page2.waitForSelector(`input[value=${keep}]:checked`);
-  assert.equal((await page2.evaluate(() => window.api.app.info())).schemaVersion, 1);
-  assert.equal(await page2.evaluate(() => window.api.settings.get('wtFolder')), wtB, 'WT folder nije preživeo restart');
+  await page.waitForSelector(`input[value=${keep}]:checked`);
+  assert.equal((await page.evaluate(() => window.api.app.info())).schemaVersion, 2);
+  assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), wtC, 'WT folder nije preživeo restart');
   console.log(`posle restarta: tema = ${keep}, primenjena`);
+
+  await nav('Poslovi');
+  await page.waitForSelector('[data-testid=job-list]');
+  await page.waitForSelector(`tr[data-job-id="${idP}"][data-status=current]`);
+  assert.equal((await jobsApi()).total, 7);
+  await page.click(`tr[data-job-id="${idP}"] [data-testid=job-open]`);
+  await page.waitForSelector('[data-testid=jobview]');
+  await waitRecords(countP);
+  await waitEdited(2); // ime i količina drugog zapisa
+  assert.equal(await page.inputValue('tr[data-key] input[data-field=name]'), 'Šifonjer đak');
+  await openTab('materials');
+  await page.waitForSelector('[data-testid=out-name]');
+  assert.equal((await page.textContent('[data-testid=out-name]')).trim(), 'Trajni izvoz.tab');
+  assert.equal(await page.inputValue('[data-testid=wt-material]'), wtMaterialLabel);
+  await openTab('exports');
+  await page.waitForSelector('[data-testid=exports-table] tbody tr');
+  assert.equal(await page.locator('[data-testid=exports-table] tbody tr').count(), 1);
+  await openTab('parts');
+  // izvoz u sveži, prazan WT folder: isti bajtovi kao prvi izvoz, bez originalnog fajla na disku
+  await chooseWtFolder(wtD);
+  assert.deepEqual(readdirSync(wtD), []);
+  await nav('Poslovi');
+  await waitRecords(countP);
+  await page.click('[data-testid=export]');
+  await waitBanner('ok');
+  assert.deepEqual(readdirSync(wtD), ['Trajni izvoz.tab']);
+  assert.deepEqual(disk(wtD, 'Trajni izvoz.tab'), FIRST, 'izvoz posle restarta nije bajt-identičan prvom izvozu');
+  await page.waitForSelector('[data-testid=job-status][data-status=current]');
+  await openTab('exports');
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid=exports-table] tbody tr').length === 2);
+  await openTab('parts');
+  console.log(`posle restarta bez originalnog fajla: posao #${idP} otvoren sa izmenom i izborom, izvoz u prazan folder bajt-identičan (${FIRST.length} B)`);
+
+  // izmena posle izvoza: lista je pokazuje kao menjanu; vraćanje izmene vraća "nepromenjen"
+  const qty0b = page.locator('tr[data-key] input[data-field=qty]').first();
+  const qtyBefore = await qty0b.inputValue();
+  await qty0b.fill('9');
+  await qty0b.press('Enter');
+  await waitEdited(3);
+  await waitSaved();
+  await toList();
+  await page.waitForSelector(`tr[data-job-id="${idP}"][data-status=changed]`);
+  await page.click(`tr[data-job-id="${idP}"] [data-testid=job-open]`);
+  await page.waitForSelector('[data-testid=jobview]');
+  await waitEdited(3);
+  const qty0c = page.locator('tr[data-key] input[data-field=qty]').first();
+  await qty0c.fill(qtyBefore);
+  await qty0c.press('Enter');
+  await waitEdited(2); // vraćena izračunata vrednost briše izmenu
+  await waitSaved();
+  await toList();
+  await page.waitForSelector(`tr[data-job-id="${idP}"][data-status=current]`);
+  console.log('izmena posle izvoza: lista pokazuje "menjan posle izvoza", vraćanje izmene vraća "izvezen"');
+  await page.click(`tr[data-job-id="${idP}"] [data-testid=job-open]`);
+  await page.waitForSelector('[data-testid=jobview]');
+  await waitEdited(2);
+  const qty0d = page.locator('tr[data-key] input[data-field=qty]').first();
+  await qty0d.fill('9');
+  await qty0d.press('Enter');
+  await waitEdited(3);
+  await waitSaved();
+  await toList();
+  await page.waitForSelector(`tr[data-job-id="${idP}"][data-status=changed]`);
+
+  // pretraga: naziv dela (bez dijakritika i sa njima), ime posla, materijal, datum, bez pogotka
+  const search = async (text) => {
+    await page.fill('[data-testid=job-search]', text);
+    await page.waitForFunction((q) => document.querySelector('[data-testid=job-count]')?.dataset.loaded === q, text);
+  };
+  const rowsNow = () => page.locator('[data-testid=job-list] tbody tr').evaluateAll((trs) => trs.map((t) => t.dataset.name));
+  await search('sifonjer');
+  assert.deepEqual(await rowsNow(), ['Šupa Đurđevak']);
+  await search('ŠIFONJER ĐAK');
+  assert.deepEqual(await rowsNow(), ['Šupa Đurđevak']);
+  await search('djak');
+  assert.deepEqual(await rowsNow(), ['Šupa Đurđevak']);
+  await search('supa djurdjevak');
+  assert.deepEqual(await rowsNow(), ['Šupa Đurđevak']);
+  await search('Drvo_dezen');
+  assert.deepEqual(await rowsNow(), ['Šupa Đurđevak']);
+  const d = new Date();
+  const today = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+  await search(today);
+  assert.equal((await rowsNow()).length, 7);
+  await search('zzzqqq');
+  await page.waitForSelector('[data-testid=job-empty]');
+  await search('');
+  assert.equal((await rowsNow()).length, 7);
+  console.log('pretraga: naziv dela, ime posla, materijal i datum nalaze posao; "sifonjer"/"ŠIFONJER ĐAK"/"djak" i "supa djurdjevak" rade bez obzira na dijakritike');
+
+  // izmena pa odmah zatvaranje programa, bez čekanja na indikator: glavni proces traži čuvanje pre zatvaranja
+  await page.click(`tr[data-job-id="${idP}"] [data-testid=job-open]`);
+  await page.waitForSelector('[data-testid=jobview]');
+  await waitEdited(3);
+  const qty2 = page.locator('tr[data-key] input[data-field=qty]').nth(2);
+  await qty2.fill('7');
+  await qty2.press('Enter');
+  await waitEdited(4);
+  const stateAtClose = await page.getAttribute('[data-testid=save-state]', 'data-state');
+  await app.close();
+  console.log(`zatvaranje odmah posle izmene (indikator je tada bio "${stateAtClose}")`);
+  app = await launch();
+  page = await app.firstWindow();
+  watch(page);
+  await page.waitForURL('app://csv2tab/**', { timeout: 15000 });
+  await page.waitForSelector('nav.sidebar');
+  await page.waitForSelector(`tr[data-job-id="${idP}"]`);
+  await page.click(`tr[data-job-id="${idP}"] [data-testid=job-open]`);
+  await page.waitForSelector('[data-testid=jobview]');
+  await waitEdited(4); // izmena iz poslednjeg trenutka pre zatvaranja je sačuvana
+  console.log('izmena neposredno pred zatvaranje programa je sačuvana');
+
+  // brisanje: potvrda kaže šta se briše; fajlovi u WT folderu ostaju
+  await page.click('[data-testid=delete-job]');
+  await page.waitForSelector('[data-testid=delete-dialog]');
+  const delText = await page.textContent('[data-testid=delete-dialog]');
+  assert.match(delText, /2 sačuvanih izvoza/);
+  assert.match(delText, /ostaju netaknuti/);
+  await page.click('[data-testid=delete-cancel]');
+  await page.waitForSelector('[data-testid=delete-dialog]', { state: 'detached' });
+  assert.equal((await jobsApi()).total, 7);
+  await page.click('[data-testid=delete-job]');
+  await page.click('[data-testid=delete-confirm]');
+  await page.waitForSelector('[data-testid=import]');
+  await page.waitForSelector(`tr[data-job-id="${idP}"]`, { state: 'detached' });
+  assert.equal((await jobsApi()).total, 6);
+  assert.deepEqual(disk(wtC, 'Trajni izvoz.tab'), FIRST, 'brisanje posla je dirnulo fajl u WT folderu');
+  assert.deepEqual(disk(wtD, 'Trajni izvoz.tab'), FIRST);
+  console.log('brisanje: potvrda pominje izvoze i da WT folder ostaje netaknut; posao nestaje, fajlovi ostaju');
+
+  // posao sa stanjem koje se ne može pročitati: poruka u prikazu posla, bez rušenja i bez tihog resetovanja
+  await page.click(`tr[data-job-id="${idNew}"] [data-testid=job-open]`);
+  await page.waitForSelector('[data-testid=state-error]');
+  assert.match(await page.textContent('[data-testid=state-error]'), /novijom verzijom/);
+  assert.equal(await page.$('[data-testid=export]'), null, 'neispravan posao može da se izveze');
+  await page.waitForSelector('[data-testid=save-state][data-state=saved]');
+  await page.click('[data-testid=close-job]');
+  await page.waitForSelector('[data-testid=job-list]');
+  assert.equal(JSON.parse(new DatabaseSync(join(userData, 'csv2tab.db'), { readOnly: true }).prepare('SELECT state FROM jobs WHERE id = ?').get(Number(idNew)).state).version, 99, 'stanje je tiho promenjeno');
+  await page.click(`tr[data-job-id="${idNew}"] [data-testid=job-open]`);
+  await page.click('[data-testid=delete-job]');
+  await page.click('[data-testid=delete-confirm]');
+  await page.waitForSelector('[data-testid=import]');
+  assert.equal((await jobsApi()).total, 5);
+  console.log('neispravno sačuvano stanje: poruka u prikazu posla, posao se ne menja ni ne izvozi, može da se obriše');
+
+  assert.deepEqual(problems, [], `CSP ili greške u konzoli: ${problems.join(' | ')}`);
+  await app.close();
+  {
+    const db = new DatabaseSync(join(userData, 'csv2tab.db'), { readOnly: true });
+    assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM job_parts WHERE job_id NOT IN (SELECT id FROM jobs)').get().n, 0);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM exports WHERE job_id NOT IN (SELECT id FROM jobs)').get().n, 0);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM jobs').get().n, 5);
+    db.close();
+  }
 
   console.log('SMOKE OK');
 } finally {
-  await app.close();
+  await app.close().catch(() => {});
   rmSync(userData, { recursive: true, force: true });
   for (const d of extraDirs) rmSync(d, { recursive: true, force: true });
 }
