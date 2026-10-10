@@ -82,6 +82,17 @@ describe('ostala nova podešavanja', () => {
     expect(() => ops['settings.set'].validate(['edgeRules', [R(1, 1, 4), R(1, 1, 5)]])).toThrow();
     expect(() => ops['settings.set'].validate(['nema', 1])).toThrow(/Nepoznat/);
   });
+  it('IPC čitanje vraća samo nazive oba foldera; puna putanja ostaje u bazi', () => {
+    const folder = join(dir, 'WT folder');
+    setSetting(db.sqlite, 'wtFolder', folder);
+    setSetting(db.sqlite, 'backupFolder', 'C:\\Users\\neko\\Kopije');
+    const ops = settingsOperations({ db } as unknown as IpcContext);
+    expect(ops['settings.get'].run('wtFolder')).toBe('WT folder');
+    expect(ops['settings.get'].run('backupFolder')).toBe('Kopije');
+    expect(ops['settings.all'].run()).toMatchObject({ wtFolder: 'WT folder', backupFolder: 'Kopije', theme: 'system' });
+    expect(getSetting(db.sqlite, 'wtFolder')).toBe(folder);
+    expect(getSetting(db.sqlite, 'backupFolder')).toBe('C:\\Users\\neko\\Kopije');
+  });
   it('upis i čitanje posle ponovnog otvaranja; oštećena vrednost vraća podrazumevanu', () => {
     const rules = [R(0, 0, 0), R(0.5, 0.5, 2)];
     setSetting(db.sqlite, 'edgeRules', rules);

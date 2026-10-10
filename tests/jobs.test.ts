@@ -256,6 +256,10 @@ describe('stanje izvoza', () => {
     const j = recordExports(db.sqlite, id, toRecord(s, undefined, 'identical'));
     expect(j.status).toBe('current');
     expect(j.exports.map((e) => e.result)).toEqual(['identical', 'identical', 'identical']);
+    expect(j.exports.every((e) => e.folder === 'wt')).toBe(true);
+    expect(getJob(db.sqlite, id)?.exports.every((e) => e.folder === 'wt')).toBe(true);
+    expect(jobExports(db.sqlite, id).exports.every((e) => e.folder === 'wt')).toBe(true);
+    expect(rows('SELECT folder FROM exports WHERE job_id = ?', id).every((r) => r.folder === '/wt')).toBe(true);
     expect(rows('SELECT size, record_count FROM exports WHERE job_id = ? AND material = ?', id, 'A')[0]).toEqual({ size: 165 + 2 * 79, record_count: 2 });
   });
 

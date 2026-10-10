@@ -28,7 +28,8 @@ export function exportOperations(ctx: IpcContext) {
         const db = ctx.db.sqlite;
         // posao se proverava pre upisa: ne upisuje se fajl koji posle ne može da se zabeleži
         if (jobId !== null && !getJobItem(ctx.db.sqlite, jobId)) throw new Error('Posao ne postoji.');
-        const res = await writeExport(wtFolder(ctx), items, overwrite);
+        const folder = wtFolder(ctx);
+        const res = await writeExport(folder, items, overwrite);
         if (!res.ok || jobId === null) return res;
         if (db !== ctx.db.sqlite || ctx.lock.restoring) return { ...res, recordError: 'Baza je promenjena tokom izvoza; izvoz nije zabeležen u vraćenoj bazi.' };
         // Beleži se samo ono što je zaista upisano ili već postoji bajt-identično; preskočeno i neuspelo se ne beleži.
@@ -39,7 +40,7 @@ export function exportOperations(ctx: IpcContext) {
           toRecord.push({
             material: items[i].material ?? '',
             fileName: it.name,
-            folder: res.folder,
+            folder,
             bytes,
             count: (bytes.length - HEADER_SIZE) / RECORD_SIZE,
             result: it.status,

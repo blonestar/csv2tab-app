@@ -25,7 +25,8 @@ old.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('wtFolder', J
 old.close();
 const env = { ...process.env, CSV2TAB_TEST: '1', CSV2TAB_DEV_URL: 'http://127.0.0.1:1', CSV2TAB_TEST_IMPORT: join(temp, 'nema.csv') };
 delete env.ELECTRON_RUN_AS_NODE;
-const launch = (files = []) => _electron.launch({ executablePath, args: [`--user-data-dir=${userData}`, ...files], env, timeout: 60000, colorScheme: null });
+const displayArgs = process.platform === 'linux' ? ['--ozone-platform=x11'] : [];
+const launch = (files = []) => _electron.launch({ executablePath, args: [`--user-data-dir=${userData}`, ...displayArgs, ...files], env, timeout: 60000, colorScheme: null });
 let app;
 try {
   app = await launch([pathToFileURL(source).href]);
@@ -49,6 +50,8 @@ try {
   const bytes = readFileSync(output);
   assert.equal(createHash('sha256').update(bytes).digest('hex'), job.outputs[0].sha256);
   assert.equal(job.status, 'current');
+  assert.equal(job.exports[0].folder, 'WT folder');
+  assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), 'WT folder');
   await page.click('nav button:has-text("Podešavanja")');
   await page.click('label:has-text("Tamna")');
   await page.waitForFunction(() => matchMedia('(prefers-color-scheme: dark)').matches);

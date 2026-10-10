@@ -19,7 +19,7 @@ function def<T>(d: SettingDef<T>): SettingDef<T> {
   return d;
 }
 
-/** Folder: putanju bira korisnik kroz sistemski dijalog u glavnom procesu; renderer je može samo da pročita. Novi
+/** Folder: putanju bira korisnik kroz sistemski dijalog u glavnom procesu; renderer dobija samo naziv. Novi
  *  folder (npr. za rezervne kopije) se dodaje kao `folderSetting()` ovde, bez izmene u operacijama. */
 function folderSetting(): SettingDef<string> & { folder: true } {
   return { default: '', is: (v): v is string => typeof v === 'string' && v.length <= 1024, folder: true };

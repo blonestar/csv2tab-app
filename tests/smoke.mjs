@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import electron from 'electron';
 import { _electron } from 'playwright-core';
@@ -26,7 +26,9 @@ delete env.CSV2TAB_DEV_URL;
 const userData = mkdtempSync(join(tmpdir(), 'csv2tab-smoke-'));
 const extraDirs = [];
 // colorScheme: null — Playwright inače nameće "light" i prefers-color-scheme ne bi pratio nativeTheme.
-const launch = (files = []) => _electron.launch({ executablePath: electron, args: [root, `--user-data-dir=${userData}`, ...files], env, timeout: 30000, colorScheme: null });
+// Wayland ne dozvoljava pouzdan programski fokus/položaj; automatizacija koristi X11 na zadatom DISPLAY-u.
+const displayArgs = process.platform === 'linux' ? ['--ozone-platform=x11'] : [];
+const launch = (files = []) => _electron.launch({ executablePath: electron, args: [root, `--user-data-dir=${userData}`, ...displayArgs, ...files], env, timeout: 30000, colorScheme: null });
 const isDark = (page) => page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches);
 const bodyBg = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 let app = await launch();
@@ -224,7 +226,10 @@ try {
     await nav('Podešavanja');
     await setEnv('CSV2TAB_TEST_FOLDER', dir);
     await page.click('[data-testid=choose-folder]');
-    await page.waitForFunction((d) => document.querySelector('[data-testid=wt-folder]')?.textContent === d, dir);
+    await page.waitForFunction((d) => document.querySelector('[data-testid=wt-folder]')?.textContent === d, basename(dir));
+    assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), basename(dir));
+    assert.equal((await page.evaluate(() => window.api.settings.all())).wtFolder, basename(dir));
+    assert.equal(await page.evaluate(() => window.api.files.chooseFolder('wtFolder')), basename(dir));
   };
   const KASMIR = 'Kasmir Kronospan 012-010';
   const HAND = 'Kronospan Kasmir.tab';
@@ -274,6 +279,12 @@ try {
   assert.match(guard[0], /izborom foldera/);
   assert.match(guard[20], /Posao ne postoji/);
   assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), '');
+  await setEnv('CSV2TAB_TEST_IMPORT', join(srcDir, 'ne-postoji.csv'));
+  const missingFile = await page.evaluate(async () => {
+    try { await window.api.files.open('import'); } catch (error) { return String(error); }
+  });
+  assert.match(missingFile, /ENOENT/);
+  assert.equal(missingFile.includes(srcDir), false, 'putanja u grešci prelazi IPC');
   assert.equal((await jobsApi()).total, 0, 'neispravni pozivi su napravili posao');
   await nav('Poslovi');
   await page.waitForSelector('[data-testid=job-empty]');
@@ -297,9 +308,14 @@ try {
   await setEnv('CSV2TAB_TEST_FOLDER', wtA);
   await page.click('[data-testid=choose-wt-folder]');
   await waitBanner('ok');
+  assert.equal((await page.textContent('[data-testid=export-banner]')).includes(wtA), false);
+  const history = await page.evaluate((id) => window.api.jobs.exports(+id), idKasmir);
+  assert.equal(history.exports[0].folder, basename(wtA));
   assert.deepEqual(readdirSync(wtA), [outName]);
   const kasmirCsv = fx(`${KASMIR}.csv`);
   const expected = await direct(KASMIR, 'csv', kasmirCsv);
+  const checked = await page.evaluate(({ name, bytes }) => window.api.export.check([{ name, bytes: new Uint8Array(bytes) }]), { name: outName, bytes: expected });
+  assert.equal(checked.folder, basename(wtA));
   assert.deepEqual(disk(wtA, outName), expected, 'izvezeni fajl != bajtovi jezgra');
   console.log(`izvoz: ${outName} (${expected.length} B) jednak bajtovima jezgra`);
   await page.waitForSelector('[data-testid=job-status][data-status=current]');
@@ -581,7 +597,8 @@ try {
     assert.equal(one('SELECT source_path FROM jobs WHERE id = ?', Number(idP)).source_path, SRC, 'putanja iz dijaloga nije zapamćena');
     assert.equal(one('SELECT source_path FROM jobs WHERE id = ?', Number(idOds)).source_path, fixturePath(`${KASMIR}.ods`));
     assert.equal(one('SELECT source_path FROM jobs WHERE id = ?', Number(idXlsx)).source_path, null, 'prevučen fajl ima putanju');
-    const saved = one('SELECT bytes FROM exports WHERE job_id = ? ORDER BY id DESC', Number(idP));
+    const saved = one('SELECT bytes, folder FROM exports WHERE job_id = ? ORDER BY id DESC', Number(idP));
+    assert.equal(saved.folder, wtC, 'puna putanja izvoza nije ostala u bazi');
     assert.deepEqual([...saved.bytes], FIRST, 'sačuvani bajtovi izvoza != fajl u folderu');
     assert.equal(one('SELECT count(*) AS n FROM job_parts WHERE job_id = ?', Number(idP)).n, countP);
     assert.equal(one("SELECT count(*) AS n FROM job_parts WHERE job_id = ? AND name = 'Šifonjer đak'", Number(idP)).n, 1);
@@ -603,7 +620,7 @@ try {
   // stranica učitava podešavanje asinhrono, pa se čeka na označeno polje
   await page.waitForSelector(`input[value=${keep}]:checked`);
   assert.equal((await page.evaluate(() => window.api.app.info())).schemaVersion, 3);
-  assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), wtC, 'WT folder nije preživeo restart');
+  assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), basename(wtC), 'WT folder nije preživeo restart');
   console.log(`posle restarta: tema = ${keep}, primenjena`);
 
   await nav('Poslovi');
@@ -878,9 +895,10 @@ try {
   await settingsTab('backup');
   await setEnv('CSV2TAB_TEST_FOLDER', backupFolder);
   await page.click('[data-testid=choose-backup-folder]');
-  await page.waitForFunction((dir) => document.querySelector('[data-testid=backup-folder]')?.textContent === dir, backupFolder);
+  await page.waitForFunction((dir) => document.querySelector('[data-testid=backup-folder]')?.textContent === dir, basename(backupFolder));
   await page.click('[data-testid=backup-create]');
   await page.waitForSelector('[data-testid=backup-made]');
+  assert.equal((await page.textContent('[data-testid=backup-made]')).includes(backupFolder), false);
   const backupName = await page.textContent('[data-testid=backup-made-name]');
   const backupPath = join(backupFolder, backupName);
   const beforeRestore = (await jobsApi()).total;
@@ -914,7 +932,7 @@ try {
   assert.equal((await jobsApi()).total, beforeRestore);
   assert.ok(await page.evaluate((id) => window.api.jobs.get(+id), newest));
   await settingsTab('backup');
-  assert.equal(await page.textContent('[data-testid=backup-folder]'), backupFolder);
+  assert.equal(await page.textContent('[data-testid=backup-folder]'), basename(backupFolder));
   console.log('rezervna kopija kroz interfejs: otvara se i ima poslove; odustajanje ostavlja bazu, vraćanje zamenjuje podatke i čuva prethodnu bazu');
 
   // ---------- meni, prečice, argumenti, jedna instanca i prozor ----------
@@ -924,12 +942,26 @@ try {
     item.click();
   }, id);
   // CDP keyboard.press zaobilazi Electronove native akceleratore; sendInputEvent prolazi istim putem kao tastatura.
-  const shortcut = (key) => app.evaluate(({ BrowserWindow }, key) => {
-    const win = BrowserWindow.getAllWindows()[0];
-    win.focus();
-    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: key, modifiers: ['control'] });
-    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: key, modifiers: ['control'] });
-  }, key);
+  const shortcut = async (key) => {
+    await app.evaluate(async ({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win.isFocused()) {
+        await new Promise((resolve, reject) => {
+          const focused = () => { clearTimeout(timer); resolve(); };
+          const timer = setTimeout(() => { win.removeListener('focus', focused); reject(new Error('Prozor nije dobio fokus.')); }, 30000);
+          win.once('focus', focused);
+          win.focus();
+        });
+      }
+      win.webContents.focus();
+    });
+    await page.waitForFunction(() => document.hasFocus());
+    await app.evaluate(({ BrowserWindow }, key) => {
+      const contents = BrowserWindow.getAllWindows()[0].webContents;
+      contents.sendInputEvent({ type: 'keyDown', keyCode: key, modifiers: ['control'] });
+      contents.sendInputEvent({ type: 'keyUp', keyCode: key, modifiers: ['control'] });
+    }, key);
+  };
   await menuClick('about');
   await page.waitForSelector('[data-testid=app-info]');
   await menuClick(`theme-${other}`);
@@ -941,7 +973,6 @@ try {
   const shortcuts = join(srcDir, 'Prečice.csv');
   writeFileSync(shortcuts, readFileSync(copies[0], 'utf8').replace('2437,0 mm', '2440,0 mm'));
   await setEnv('CSV2TAB_TEST_IMPORT', shortcuts);
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
   await shortcut('O');
   await page.waitForSelector('[data-testid=jobview][data-file="Prečice.csv"]');
   await waitSaved();
@@ -978,7 +1009,7 @@ try {
   assert.equal((await jobsApi()).total, beforeArguments + 2);
   const secondInstance = (file) => new Promise((resolve, reject) => {
     // Playwright dodaje --no-sandbox prvoj instanci; ista testna zastavica je potrebna drugoj na CI runneru.
-    const child = spawn(electron, [root, ...(process.platform === 'linux' ? ['--no-sandbox'] : []), `--user-data-dir=${userData}`, file], { cwd: srcDir, env, stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(electron, [root, ...(process.platform === 'linux' ? ['--no-sandbox'] : []), `--user-data-dir=${userData}`, ...displayArgs, file], { cwd: srcDir, env, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8192); });
     const timeout = setTimeout(() => { child.kill(); reject(new Error('Druga instanca nije izašla za 30 s.')); }, 30000);
@@ -1026,6 +1057,15 @@ try {
   }
 
   console.log('SMOKE OK');
+} catch (error) {
+  const page = app.windows()[0];
+  if (page && !page.isClosed()) {
+    console.log('Stanje pri neuspehu:', await page.evaluate(() => ({ url: location.href, focus: document.hasFocus(), text: document.body.innerText.slice(-1800) })).catch(() => null));
+    const folder = process.env.CSV2TAB_SCREENSHOTS || join(root, 'test-results');
+    mkdirSync(folder, { recursive: true });
+    await page.screenshot({ path: join(folder, 'smoke-neuspeh.png'), scale: 'css' }).catch(() => {});
+  }
+  throw error;
 } finally {
   await app.close().catch(() => {});
   rmSync(userData, { recursive: true, force: true });

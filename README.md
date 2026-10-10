@@ -26,13 +26,15 @@ env -u ELECTRON_RUN_AS_NODE npm start
 
 Potreban je Node 24.
 
+Linux smoke i provera paketa koriste X11 na zadatom `DISPLAY`-u, jer Wayland ograničava programski fokus i položaj prozora.
+
 ## Paketi
 
 ```sh
 npm run build:linux   # AppImage, Linux x64
 npm run build:win     # NSIS po korisniku i portable, Windows x64
 npm run pack          # raspakovan paket za trenutni sistem
-npm run test:package -- "release/csv2tab-app-0.8.0-linux-x86_64.AppImage"
+npm run test:package -- "release/csv2tab-app-0.8.1-linux-x86_64.AppImage"
 ```
 
 Paketi su u `release/`. AppImage je proveren na Fedori (potreban je FUSE 2); Windows instalacija, nadogradnja,

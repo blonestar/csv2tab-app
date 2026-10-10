@@ -4,6 +4,7 @@ import { open, readFile, rename, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ExportCheck, ExportItem, ExportWriteResult } from '../shared/api';
 import { exportFileName } from './exportName';
+import { fileErrorMessage, folderName } from './fileNames';
 
 /** .tab ima najviše 65535 zapisa: 165 + 65535 * 79 bajtova. */
 export const MAX_TAB_BYTES = 165 + 65535 * 79;
@@ -11,15 +12,16 @@ export const MAX_TAB_BYTES = 165 + 65535 * 79;
 type FolderState = { ok: true; folder: string } | Extract<ExportCheck, { ok: false }>;
 
 export async function folderState(folder: string): Promise<FolderState> {
+  const label = folderName(folder);
   if (!folder) {
     return { ok: false, reason: 'no-folder', folder, message: 'WT folder nije zadat. Izaberite ga u podešavanjima.' };
   }
   try {
-    if ((await stat(folder)).isDirectory()) return { ok: true, folder };
+    if ((await stat(folder)).isDirectory()) return { ok: true, folder: label };
   } catch {
     /* ne postoji ili nije dostupan */
   }
-  return { ok: false, reason: 'folder-missing', folder, message: `WT folder „${folder}" ne postoji ili nije dostupan. Izaberite ga ponovo.` };
+  return { ok: false, reason: 'folder-missing', folder: label, message: `WT folder „${label}" ne postoji ili nije dostupan. Izaberite ga ponovo.` };
 }
 
 const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && Buffer.compare(a, b) === 0;
@@ -67,7 +69,7 @@ export async function checkExport(folder: string, items: readonly ExportItem[]):
     else if (ex.bytes && same(ex.bytes, items[i].bytes)) out.push({ name: names[i], status: 'identical', existing: null });
     else out.push({ name: names[i], status: 'differs', existing: ex.bytes });
   }
-  return { ok: true, folder, items: out };
+  return { ok: true, folder: fs.folder, items: out };
 }
 
 /** Privremeni fajl u istom folderu, pa rename: na disku je uvek ili stari ili ceo novi fajl. */
@@ -108,8 +110,8 @@ export async function writeExport(folder: string, items: readonly ExportItem[], 
         out.push({ name, status: 'written' });
       }
     } catch (e) {
-      out.push({ name, status: 'error', message: e instanceof Error ? e.message : String(e) });
+      out.push({ name, status: 'error', message: fileErrorMessage(e) });
     }
   }
-  return { ok: true, folder, items: out };
+  return { ok: true, folder: fs.folder, items: out };
 }

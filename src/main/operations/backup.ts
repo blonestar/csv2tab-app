@@ -5,6 +5,7 @@ import { basename } from 'node:path';
 import { createBackup, discardStaged, stageBackup, restoreDatabase } from '../db/backup';
 import { loadMigrations } from '../db/migrate';
 import { getSetting } from '../db/settings';
+import { folderName } from '../fileNames';
 import { pickBackupFile } from '../files';
 import { noArgs, type IpcContext, type Operation } from './types';
 
@@ -32,7 +33,7 @@ export function backupOperations(ctx: IpcContext) {
         const folder = getSetting(ctx.db.sqlite, 'backupFolder');
         if (!folder) throw new Error('Folder za rezervne kopije nije zadat. Izaberite ga u podešavanjima.');
         const r = createBackup(ctx.db, folder, latest());
-        return { name: r.name, size: r.size, folder, jobs: r.jobs };
+        return { name: r.name, size: r.size, folder: folderName(folder), jobs: r.jobs };
       },
     } satisfies Operation<'backup.create'>,
     'backup.inspect': {

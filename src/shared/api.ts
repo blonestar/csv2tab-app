@@ -39,6 +39,7 @@ export interface ExportItem {
   material?: string;
 }
 
+/** `folder` u odgovorima je naziv za prikaz, nikad putanja. */
 export type ExportFolderProblem = { ok: false; reason: 'no-folder' | 'folder-missing'; folder: string; message: string };
 
 export type ExportCheck =
@@ -92,7 +93,7 @@ export interface BackupInfo {
   /** Ime fajla (putanju renderer ne vidi). */
   name: string;
   size: number;
-  /** Folder za rezervne kopije (za prikaz). */
+  /** Naziv foldera za rezervne kopije (bez putanje). */
   folder: string;
   jobs: number;
 }
@@ -158,6 +159,7 @@ export interface Api {
     info(): Promise<AppInfo>;
   };
   settings: {
+    /** Folder-podešavanja vraćaju samo naziv; pune putanje ostaju u glavnom procesu. */
     get<K extends SettingKey>(key: K): Promise<SettingValue<K>>;
     all(): Promise<SettingsMap>;
     /** Vrednost se proverava u glavnom procesu; neispravna se odbija. */
@@ -171,7 +173,7 @@ export interface Api {
     open(purpose: OpenPurpose): Promise<OpenedFile | null>;
     /** Sledeći fajl iz argumenata procesa; putanja ostaje u glavnom procesu. */
     next(): Promise<OpenedFile | null>;
-    /** Dijalog za izbor foldera; izabrana putanja se upisuje u bazu. null kad korisnik odustane. */
+    /** Dijalog za izbor foldera; putanja se upisuje u bazu, vraća se samo naziv. null kad korisnik odustane. */
     chooseFolder(key: FolderSettingKey): Promise<string | null>;
   };
   export: {

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { openDatabase, type AppDatabase, type OpenOptions } from './index';
 import { loadMigrations } from './migrate';
+import { fileErrorMessage } from '../fileNames';
 
 /** Greška sa porukom na srpskom, bez tehničkih detalja; bezbedna za prikaz korisniku. */
 export class BackupError extends Error {
@@ -148,7 +149,7 @@ export function createBackup(app: AppDatabase, folder: string, latestVersion: nu
     rmSync(part, { force: true });
     rmSync(file, { force: true });
     if (e instanceof BackupError) throw new BackupError(`Kopija nije ispravna: ${e.message}`);
-    throw new BackupError(`Kopija nije napravljena: ${e instanceof Error ? e.message : String(e)}`);
+    throw new BackupError(`Kopija nije napravljena: ${fileErrorMessage(e)}`);
   }
 }
 
@@ -195,7 +196,7 @@ export function restoreDatabase(current: AppDatabase, staged: string, opts: Open
   } catch (e) {
     discardStaged(staged);
     if (e instanceof BackupError) throw e;
-    throw new BackupError(`Kopija se ne može dovesti na tekuću šemu: ${e instanceof Error ? e.message : String(e)}`);
+    throw new BackupError(`Kopija se ne može dovesti na tekuću šemu: ${fileErrorMessage(e)}`);
   } finally {
     // openDatabase pravi .v<N>.bak pored kopije pre migracije; kopija je privremena, original ostaje kod korisnika
     for (let v = 1; v <= latest; v++) rmSync(`${staged}.v${v}.bak`, { force: true });
@@ -229,6 +230,6 @@ export function restoreDatabase(current: AppDatabase, staged: string, opts: Open
     }
     if (closed) Object.assign(current, openDatabase({ ...opts, file }));
     discardStaged(staged);
-    throw new BackupError(`Vraćanje nije uspelo, ostala je trenutna baza: ${e instanceof Error ? e.message : String(e)}`);
+    throw new BackupError(`Vraćanje nije uspelo, ostala je trenutna baza: ${fileErrorMessage(e)}`);
   }
 }

@@ -119,7 +119,9 @@ Podešavanja se **ne čuvaju u localStorage**, nego u bazi, pa ne zavise od orig
 - CSP bez `unsafe-eval` i bez inline skripti; dozvoljen izvor je samo `app:` (i `blob:`/`data:` ako zatrebaju).
 - Navigacija van `app://csv2tab/` se blokira, a spoljni linkovi se otvaraju u sistemskom browseru
   (`setWindowOpenHandler`, `will-navigate`).
-- Renderer nikad ne zadaje putanju. Foldere (WT folder, folder za rezervne kopije) bira korisnik kroz sistemski
+- Renderer nikad ne vidi ni zadaje putanju. Podešavanja, izvozi, istorija i kopije vraćaju samo naziv foldera;
+  greške fajl sistema zadržavaju razlog bez putanje. Pune putanje ostaju u bazi i glavnom procesu.
+  Foldere (WT folder, folder za rezervne kopije) bira korisnik kroz sistemski
   dijalog u glavnom procesu, a oni se pamte u bazi. Imena fajlova iz renderera se svode na osnovno ime (bez
   separatora) pre upisa.
 - Svaka IPC operacija proverava oblik argumenata pre nego što dodirne bazu ili disk.
@@ -158,6 +160,10 @@ duplikata i čuvanja kao kroz dijalog. Drugo pokretanje vraća minimizovan glavn
 Ctrl+F čuva i zatvara posao pre fokusa na pretragu liste; neuspešno čuvanje traži postojeću odluku o nastavku.
 Pri zatvaranju se pamte normalne granice prozora i maksimizacija, a pri pokretanju prilagođavaju dostupnim
 ekranima. Prozor poređenja ne menja sačuvani položaj glavnog prozora.
+
+Na Waylandu Electron uglavnom ne može programski da zada položaj ili fokus bez korisničkog unosa
+([ograničenje platforme](https://www.electronjs.org/docs/latest/api/browser-window/)). Linux automatske provere
+koriste X11 na zadatom `DISPLAY`-u; podrazumevani prikaz aplikacije prati okruženje.
 
 ## Baza
 
