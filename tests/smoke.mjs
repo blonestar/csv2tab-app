@@ -978,7 +978,7 @@ try {
   assert.equal((await jobsApi()).total, beforeArguments + 2);
   const secondInstance = (file) => new Promise((resolve, reject) => {
     // Playwright dodaje --no-sandbox prvoj instanci; ista testna zastavica je potrebna drugoj na CI runneru.
-    const child = spawn(electron, [root, '--no-sandbox', `--user-data-dir=${userData}`, file], { cwd: srcDir, env, stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(electron, [root, ...(process.platform === 'linux' ? ['--no-sandbox'] : []), `--user-data-dir=${userData}`, file], { cwd: srcDir, env, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8192); });
     const timeout = setTimeout(() => { child.kill(); reject(new Error('Druga instanca nije izašla za 30 s.')); }, 30000);
@@ -998,9 +998,11 @@ try {
   assert.equal((await jobsApi()).total, beforeArguments + 3);
   await waitSaved();
   const finalTotal = (await jobsApi()).total;
-  const expectedBounds = await app.evaluate(({ BrowserWindow }) => {
+  const expectedBounds = await app.evaluate(({ BrowserWindow, screen }) => {
     const win = BrowserWindow.getAllWindows()[0];
-    win.setBounds({ x: 200, y: 100, width: 980, height: 650 });
+    const area = screen.getPrimaryDisplay().workArea;
+    // Položaj mora da stane i na mali CI ekran; vraćanje van ekrana već ima zasebne testove.
+    win.setBounds({ x: area.x + 20, y: area.y + 20, width: Math.min(980, area.width - 40), height: Math.min(650, area.height - 40) });
     return win.getNormalBounds();
   });
   await app.close();
