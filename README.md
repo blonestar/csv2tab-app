@@ -6,7 +6,7 @@ i čuva ih kao poslove u lokalnoj bazi. Jezgro konverzije deli sa web aplikacijo
 
 Aplikacija uvozi i pregleda fajlove, čuva poslove i izmene, izvozi u WT folder i pamti izbore materijala i kolona.
 Podešavanja imaju pravila kantovanja, temu i rezervnu kopiju sa vraćanjem. Plan i otvorene stavke su u `PROJECT.md`.
-Provereno na Linuxu; Windows još čeka proveru.
+Lokalno provereno na Linuxu; CI proverava aplikaciju i bazu i na Windowsu. Ručna proba na Windowsu 10/11 ostaje otvorena.
 
 ## Postavljanje
 
@@ -35,8 +35,9 @@ npm run pack          # raspakovan paket za trenutni sistem
 npm run test:package -- "release/csv2tab-app-0.8.0-linux-x86_64.AppImage"
 ```
 
-Paketi su u `release/`. AppImage je proveren na Fedori (potreban je FUSE 2); Windows instalacija, nadogradnja i
-deinstalacija još čekaju ručnu proveru. Portable koristi istu lokalnu bazu kao instalirana aplikacija.
+Paketi su u `release/`. AppImage je proveren na Fedori (potreban je FUSE 2); Windows instalacija, nadogradnja,
+portable omotač i deinstalacija još čekaju ručnu proveru. Raspakovana Windows aplikacija prolazi proveru paketa u CI-u.
+Portable koristi istu lokalnu bazu kao instalirana aplikacija.
 Ikonice su izvedene iz postojećeg web logoa i priložene u repou; ponovno generisanje (`npm run icons`) traži ImageMagick.
 
 GitHub Actions proverava PR-ove i `main` na Linuxu i Windowsu, a paketi i izveštaji su među artefaktima provere.

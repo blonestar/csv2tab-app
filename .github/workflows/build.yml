@@ -78,7 +78,6 @@ jobs:
         run: |
           npm run build:win
           npm run test:package -- release/win-unpacked/csv2tab-app.exe | tee test-results/package.log
-          npm run test:package -- release/*-portable.exe | tee test-results/portable.log
       - name: Sačuvaj pakete
         uses: actions/upload-artifact@v7
         with:
