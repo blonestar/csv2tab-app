@@ -25,3 +25,16 @@ env -u ELECTRON_RUN_AS_NODE npm start
 ```
 
 Potreban je Node 24.
+
+## Paketi
+
+```sh
+npm run build:linux   # AppImage, Linux x64
+npm run build:win     # NSIS po korisniku i portable, Windows x64
+npm run pack          # raspakovan paket za trenutni sistem
+npm run test:package -- "release/csv2tab-app-0.8.0-linux-x86_64.AppImage"
+```
+
+Paketi su u `release/`. AppImage je proveren na Fedori (potreban je FUSE 2); Windows instalacija, nadogradnja i
+deinstalacija još čekaju ručnu proveru. Portable koristi istu lokalnu bazu kao instalirana aplikacija.
+Ikonice su izvedene iz postojećeg web logoa i priložene u repou; ponovno generisanje (`npm run icons`) traži ImageMagick.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { filesFromArguments } from '../src/main/arguments';
 import { restoreWindowState } from '../src/main/windowState';
 
@@ -11,6 +12,10 @@ describe('fajlovi iz argumenata', () => {
     expect(filesFromArguments(['csv2tab.exe', 'Šuma 1.CSV', '--flag', 'drugi.ods'], cwd, true))
       .toEqual([resolve(cwd, 'Šuma 1.CSV'), resolve(cwd, 'drugi.ods')]);
     expect(filesFromArguments(['electron', '/repo'], cwd, false)).toEqual([]);
+  });
+  it('prihvata file adresu iz Linux stavke Otvori pomoću i preskače neispravne adrese', () => {
+    const file = resolve('Šuma Đurđevak.csv');
+    expect(filesFromArguments(['app', pathToFileURL(file).href, 'file:///neispravno%zz.csv'], resolve('.'), true)).toEqual([file]);
   });
 });
 

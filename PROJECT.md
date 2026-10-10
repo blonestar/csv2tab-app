@@ -9,7 +9,9 @@ Stanje: **faze 0–6 su gotove**. Uvoz pravi posao u bazi, izmene se čuvaju sam
 originalnog fajla. Novi poslovi preuzimaju zapamćene izbore materijala i kolona i snimak pravila iz podešavanja.
 Podešavanja imaju tabelu kantovanja, pravilo za jednobojne dekore, spajanje, foldere, temu i rezervnu kopiju sa
 vraćanjem. Meni ima prečice, jedna instanca prima fajlove iz argumenata i drugih pokretanja, a glavni prozor
-pamti veličinu i položaj. Provere su na Linuxu; `node:sqlite` na Windowsu nije proveren.
+pamti veličinu i položaj. Pakovanje daje AppImage za Linux i ima konfiguraciju za NSIS i portable za Windows x64.
+AppImage je pokrenut na Fedori: migrira staru bazu, uvozi i ponavlja izvoz posle restarta bez izvornog fajla.
+Windows instalacija i `node:sqlite` na Windowsu još nisu provereni.
 
 ## Cilj
 
@@ -276,11 +278,18 @@ stavlja na mrežni disk.
 
 - **electron-builder**. Windows: NSIS instalacija (po korisniku, bez administratorskih prava) i portable `.exe`,
   x64. Linux: AppImage, x64.
-- Asocijacije fajlova (`fileAssociations`) za `.tab`, `.csv`, `.ods`, `.xlsx`, bez preuzimanja podrazumevanog programa
-  za `.csv`/`.xlsx` (samo stavka u „Otvori pomoću").
+- Asocijacije za `.tab`, `.csv`, `.ods`, `.xlsx` bez preuzimanja podrazumevanog programa. NSIS dodatak
+  `build/installer.nsh` upisuje samo korisničke ProgID i `OpenWithProgids`, a pri deinstalaciji uklanja svoje upise.
+  Ugrađeni Windows `fileAssociations` se ne koristi jer menja podrazumevanu vrednost ekstenzije. AppImage sadrži
+  desktop stavku i MIME definicije; sama AppImage datoteka ne instalira desktop stavku. Linux „Otvori pomoću“
+  može da prosledi `file://` adrese. Aplikacija prihvata i njih i obične putanje.
 - Portable verzija koristi isti `userData` kao instalirana, da baza ne zavisi od toga odakle je `.exe` pokrenut.
 - Ikonice se generišu iz logoa web aplikacije (`.ico` za Windows, PNG skup za Linux).
+  `npm run icons` traži ImageMagick; gotove ikonice su u repou, pa pakovanje ne traži ImageMagick.
 - Electron je u `devDependencies`; u paket ulaze izgrađeni `main`, `preload`, `renderer` i `migrations` (`asar`).
+  `productName` ostaje `csv2tab-app`, pa instalirana i portable aplikacija koriste postojeći naziv `userData`.
+  Testne promenljive i razvojni URL su isključeni u paketu. Komande su `npm run build:linux`, `npm run build:win`
+  i `npm run pack`; rezultat je u `release/`.
 - CI: GitHub Actions, matrica `windows-latest` + `ubuntu-latest`, pokreće se na tag `v*`, gradi pakete i kači ih na
   GitHub Release. Po odluci korisnika oba repoa su javna, pa submodul ne traži poseban ključ ili token.
 
@@ -321,6 +330,8 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
 - [ ] **7. Pakovanje**: electron-builder, ikonice, asocijacije fajlova. *Gotovo kad:* AppImage radi na Fedori, a
       NSIS instalacija i portable `.exe` rade na čistom Windows 10/11 (instalacija, „Otvori pomoću", nadogradnja
       preko starije verzije bez gubitka baze, deinstalacija).
+      **Implementirano i provereno na Linuxu:** AppImage, migracije iz paketa, uvoz sa dijakritikom i isti izvoz
+      posle restarta. NSIS i portable su podešeni; ručna proba na čistom Windowsu ostaje otvorena.
 - [ ] **8. CI i izdanja**: GitHub Actions na tag, paketi na Release, testovi i smoke test u CI-u.
 
 Kasnije, redosled nije utvrđen:
@@ -346,6 +357,9 @@ Kasnije, redosled nije utvrđen:
   `CSV2TAB_TEST_RESTORE` i `CSV2TAB_TEST_FAIL_SAVE` (svako čuvanje posla pada) koje
   glavni proces čita pri svakom pozivu, ali samo uz `CSV2TAB_TEST=1` i nikad u spakovanoj aplikaciji
   (`src/main/testHooks.ts`).
+- **Provera paketa**: `npm run test:package -- <AppImage ili izvršni fajl>` pokreće paket nad privremenom bazom
+  šeme 1, proverava migracije iz asara, uvoz iz `file://` argumenta sa dijakritikom, izvoz i ponavljanje izvoza
+  posle restarta bez izvornog fajla. Proverava i da razvojni URL i testne prečice nisu dostupni u paketu.
 - Ručna provera na Windowsu pre svakog izdanja: instalacija preko prethodne verzije, otvaranje fajla sa dijakritikom
   u imenu i putanji, izvoz u folder sa postojećim fajlovima.
 

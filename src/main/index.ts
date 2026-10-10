@@ -28,7 +28,7 @@ const MIGRATIONS = join(here, '../../migrations');
 
 // Razvoj: dev.mjs zadaje adresu Vite servera. Spakovana aplikacija je ignoriše.
 const devUrl = app.isPackaged ? undefined : process.env.CSV2TAB_DEV_URL;
-const testMode = process.env.CSV2TAB_TEST === '1';
+const testMode = process.env.CSV2TAB_TEST === '1' && !app.isPackaged;
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 const pendingFiles = filesFromArguments(process.argv, process.cwd(), app.isPackaged);
@@ -84,6 +84,7 @@ function createWindow(hash = '', title = 'csv2tab'): BrowserWindow {
     minWidth: 760,
     minHeight: 480,
     title,
+    icon: app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(here, '../../build/icons/256x256.png'),
     show: false,
     webPreferences: {
       preload: PRELOAD,
