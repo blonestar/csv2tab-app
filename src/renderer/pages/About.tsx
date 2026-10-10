@@ -19,6 +19,10 @@ export function About() {
           <dd>{info.appVersion}</dd>
           <dt>Jezgro konverzije</dt>
           <dd>{info.coreVersion}</dd>
+          <dt>Šema baze</dt>
+          <dd>{info.schemaVersion}</dd>
+          <dt>SQLite</dt>
+          <dd>{info.sqliteVersion}</dd>
           <dt>Electron</dt>
           <dd>{info.electron}</dd>
           <dt>Chrome</dt>

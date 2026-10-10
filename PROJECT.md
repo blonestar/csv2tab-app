@@ -5,8 +5,9 @@ binarni WT Input `.tab`. Nastala je iz web aplikacije [csv2tab](https://github.c
 jezgro konverzije, ali ima **svoj interfejs i svoju bazu**. Ovaj dokument je plan cele aplikacije. Pravila rada za
 agente su u `AGENTS.md`.
 
-Stanje: **faza 1 (osnova) je gotova**: prozor sa bočnom trakom, `app://` protokol, most sa probnom operacijom i jezgro
-preko `@core`. Baze, poslova i uvoza još nema. Kad se faza završi, označi je u odeljku [Faze](#faze).
+Stanje: **faze 1 (osnova) i 2 (baza) su gotove**: prozor sa bočnom trakom, `app://` protokol, most, jezgro preko
+`@core`, SQLite baza sa migracijama, podešavanja (tema) i katalog. Poslova i uvoza još nema; `node:sqlite` na Windowsu
+nije proveren. Kad se faza završi, označi je u odeljku [Faze](#faze).
 
 ## Cilj
 
@@ -58,11 +59,12 @@ csv2tab-app/
 ├─ src/
 │  ├─ main/                glavni proces
 │  │  ├─ index.ts          prozori, app:// protokol, meni, jedna instanca
-│  │  ├─ db/               baza: otvaranje, migracije, upiti
+│  │  ├─ db/               baza: otvaranje, migracije, katalog, podešavanja (bez Electrona, radi i u Node-u)
 │  │  ├─ files.ts          dijalozi, čitanje i upis fajlova, WT folder
+│  │  ├─ operations/       IPC operacije po oblastima (app, settings, catalog ...), svaka sa validate + run
 │  │  └─ ipc.ts            registracija IPC operacija
 │  ├─ preload/index.ts     most: contextBridge izlaže window.api
-│  ├─ shared/api.ts        tipovi mosta i zapisa iz baze (koriste ih obe strane)
+│  ├─ shared/              api.ts: tipovi mosta; settings.ts: ključevi podešavanja sa tipom i proverom
 │  └─ renderer/            interfejs (React + TypeScript)
 ├─ migrations/             numerisane SQL migracije
 ├─ build/                  ikonice i resursi za electron-builder
@@ -140,12 +142,19 @@ Meni i prečice: Uvezi (Ctrl+O), Izvezi (Ctrl+S), Pretraga (Ctrl+F), Podešavanj
 Jedan SQLite fajl u `app.getPath('userData')` (`csv2tab.db`), WAL režim. Radi se na jednom računaru; baza se ne
 stavlja na mrežni disk.
 
-Nacrt šeme (konačan oblik se utvrđuje u fazi 2):
+Šema se vodi migracijama u `migrations/`. **Konačan oblik (migracija `0001_init.sql`, faza 2):**
+
+| Tabela | Kolone |
+| --- | --- |
+| `settings` | `key` (PK), `value` (JSON). Ključevi su zatvoren skup u `src/shared/settings.ts` (za sada samo `theme`: `system` / `light` / `dark`), svaki sa tipom i proverom. Nema ključa u bazi = podrazumevana vrednost. |
+| `materials` | `id` (PK), `source` (`builtin` / `user`), `code`, `name`, `sheet_w`, `sheet_h`, `thickness`, `grain` (0/1), `position` (redosled iz kataloga). `code` je jedinstven među `builtin` redovima (parcijalni indeks); korisnikov red sme da ima istu šifru. |
+| `edge_bands` | `id` (PK), `source`, `code`, `name`, `position`; ista pravila kao za materijale. |
+| `meta` | `key` (PK), `value`: unutrašnji podaci (`catalog_hash`). Ne izlaže se rendereru. |
+
+Tabele ispod su još nacrt; svaka stiže kao **nova migracija** u fazi koja je koristi, kad se zna njen stvarni oblik:
 
 | Tabela | Sadržaj |
 | --- | --- |
-| `settings` | ključ → JSON vrednost (folderi, tema, tabela šifara kantovanja, pravila) |
-| `materials`, `edge_bands` | katalog; kolona `source` razlikuje ugrađene redove od korisnikovih |
 | `jobs` | ime, napomena, datumi, izvorni fajl (ime, putanja, tip, heš, **bajtovi**), `state` (JSON) |
 | `job_parts` | konačni zapisi posla po materijalu (za pretragu, potrošnju i štampu) |
 | `exports` | posao, materijal, ime fajla, folder, vreme, broj zapisa, heš i **bajtovi** izvezenog `.tab` |
@@ -158,10 +167,20 @@ Nacrt šeme (konačan oblik se utvrđuje u fazi 2):
 - **Izvoz čuva tačne bajtove.** Kasnija ispravka jezgra može da promeni rezultat za stari posao; sačuvani `.tab`
   pokazuje šta je stvarno otišlo u WT. „Menjano posle izvoza" je poređenje heša trenutnog rezultata sa poslednjim
   izvozom.
-- **Katalog.** Pri prvom pokretanju se puni iz `wt-catalog.json`. Kad nova verzija donese izmenjen katalog, ugrađeni
-  redovi se osvežavaju, a korisnikovi se ne diraju.
-- **Migracije.** Numerisani SQL fajlovi, verzija u `PRAGMA user_version`, svaka u transakciji. Pre migracije se
-  pravi kopija baze pored originala. Baza novija od aplikacije se ne otvara, uz jasnu poruku.
+- **Katalog.** Pri prvom pokretanju se puni iz `wt-catalog.json` (uvezen u main bundle). Promena se prepoznaje po
+  SHA-256 otisku materijala i traka, sačuvanom u `meta.catalog_hash`. Ako se otisak razlikuje, u **jednoj transakciji**
+  se ugrađeni redovi dodaju/menjaju po šifri (`id` ostaje isti), ugrađeni kojih više nema se brišu, a `user` redovi se
+  ne diraju. Kasnije tabele koje pominju materijal treba da koriste `materials.id` sa `ON DELETE SET NULL` (ili
+  šifru), jer ugrađeni red može da nestane iz novog kataloga. Šifre u trenutnom katalogu su jedinstvene (860 + 10).
+  Renderer dobija katalog operacijom `catalog.get` u obliku `WtCatalog`, pa radi `searchMaterials` iz jezgra.
+- **Migracije.** Numerisani SQL fajlovi (`0001_ime.sql`, bez rupa), verzija u `PRAGMA user_version`, svaka u svojoj
+  transakciji (zajedno sa podizanjem verzije). Pre migracije postojeće baze pravi se kopija `csv2tab.db.v<stara>.bak`
+  pored originala (`VACUUM INTO`). Baza novija od aplikacije se ne otvara niti menja (verzija se čita otvaranjem samo
+  za čitanje); aplikacija prikaže poruku na srpskom i izlazi. Folder `migrations/` se u izgrađenoj aplikaciji nalazi
+  relativno u odnosu na `dist/main/index.js` (`../../migrations`); u asaru ostaje isti odnos (korenski folder asara),
+  a čita se samo `fs`-om, što radi i unutar asara.
+- **Tema.** Čuva se u bazi, a primenjuje je glavni proces preko `nativeTheme.themeSource` pre otvaranja prozora, pa
+  CSS (`prefers-color-scheme`) prati izbor bez skripte i bez treperenja pri pokretanju.
 - **Rezervna kopija.** Ručno iz podešavanja u izabrani folder, plus vraćanje iz kopije.
 
 ## Verzije
@@ -193,9 +212,10 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
       prozor, renderer jezgrom pretvara CSV, ODS i XLSX fixture iz `web/tests/fixtures/` u iste `.tab` bajtove (a
       referentni `.tab` fajlovi prolaze čitanje pa pisanje bajt-identično), a `npm run build` daje pokretljiv
       nespakovan build.
-- [ ] **2. Baza**: `node:sqlite`, migracije, `settings`, punjenje kataloga, IPC operacije sa proverom argumenata.
+- [x] **2. Baza**: `node:sqlite`, migracije, `settings`, punjenje kataloga, IPC operacije sa proverom argumenata.
       *Gotovo kad:* testovi baze prolaze (prazna baza, migracija sa prethodne šeme, odbijanje novije baze), a
       podešavanje upisano kroz interfejs preživljava restart. Proveriti `node:sqlite` na Windowsu.
+      **Otvoreno:** `node:sqlite` je proveren samo na Linuxu; provera na Windowsu ostaje za ručnu probu (i za fazu 7).
 - [ ] **3. Uvoz, pregled, izvoz**: uvoz fajla (dijalog i prevlačenje), mapiranje kolona, tabela zapisa sa izmenom,
       materijali, izvoz u WT folder sa poređenjem pre prepisivanja, prozor za poređenje. *Gotovo kad:* fixture izvezen
       kroz aplikaciju je bajt-identičan referentnom `.tab`, a izvoz preko postojećeg fajla prikazuje razlike.

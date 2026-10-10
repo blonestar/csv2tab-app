@@ -1,16 +1,23 @@
 // Glavni proces: app:// protokol, prozor, bezbednosna podešavanja.
-import { app, BrowserWindow, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, nativeTheme, protocol, session, shell } from 'electron';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_ORIGIN, APP_SCHEME } from '../shared/api';
 import { resolveAppPath } from './appPath';
 import { CSP_BUILT, cspDev } from './csp';
+import catalog from '../../web/src/data/wt-catalog.json' with { type: 'json' };
+import type { WtCatalog } from '@core/catalog';
+import { DatabaseTooNewError, openDatabase, type AppDatabase } from './db';
+import { getSetting } from './db/settings';
 import { registerIpc } from './ipc';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const RENDERER_ROOT = join(here, '../renderer');
 const PRELOAD = join(here, '../preload/index.cjs');
+// Migracije su pored dist/ (koren repoa; u paketu koren asara). fs čitanje radi i unutar asara, pa je dovoljna
+// putanja relativna u odnosu na izgrađeni main.
+const MIGRATIONS = join(here, '../../migrations');
 
 // Razvoj: dev.mjs zadaje adresu Vite servera. Spakovana aplikacija je ignoriše.
 const devUrl = app.isPackaged ? undefined : process.env.CSV2TAB_DEV_URL;
@@ -85,7 +92,42 @@ function createWindow(): BrowserWindow {
   return win;
 }
 
+let database: AppDatabase | undefined;
+
+/** Podešavanja koja menjaju samu aplikaciju. Tema ide kroz nativeTheme, pa CSS (prefers-color-scheme) prati izbor
+ *  bez ikakve skripte i bez treperenja pri pokretanju. */
+function applySetting(key: string, value: unknown): void {
+  if (key === 'theme') nativeTheme.themeSource = value as 'system' | 'light' | 'dark';
+}
+
+function openDb(): AppDatabase | undefined {
+  try {
+    return openDatabase({
+      file: join(app.getPath('userData'), 'csv2tab.db'),
+      migrationsDir: MIGRATIONS,
+      catalog: catalog as unknown as WtCatalog,
+    });
+  } catch (e) {
+    if (e instanceof DatabaseTooNewError) {
+      dialog.showErrorBox(
+        'Baza je novija od programa',
+        `Baza podataka je napravljena novijom verzijom csv2tab (šema ${e.dbVersion}, ovaj program zna do ${e.appVersion}). ` +
+          'Instalirajte noviju verziju programa. Baza nije otvorena niti izmenjena.',
+      );
+    } else {
+      dialog.showErrorBox('Baza se ne može otvoriti', e instanceof Error ? e.message : String(e));
+    }
+    return undefined;
+  }
+}
+
 app.whenReady().then(() => {
+  database = openDb();
+  if (!database) {
+    app.exit(1);
+    return;
+  }
+  applySetting('theme', getSetting(database.sqlite, 'theme'));
   if (devUrl) {
     // Samo razvoj: Vite servira stranicu sa http://, pa CSP zadaje main.
     const csp = cspDev(devUrl);
@@ -95,7 +137,7 @@ app.whenReady().then(() => {
   } else {
     serveApp();
   }
-  registerIpc({ devUrl, testMode });
+  registerIpc({ devUrl, testMode, db: database, applySetting });
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -106,3 +148,9 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
+
+// Čisto zatvaranje baze (checkpoint WAL-a), da restart i rezervna kopija vide celovit fajl.
+app.on('will-quit', () => {
+  database?.close();
+  database = undefined;
+});

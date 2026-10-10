@@ -16,6 +16,7 @@ export default defineConfig({
   base: './',
   plugins: [react()],
   resolve: { alias },
-  server: { host: '127.0.0.1', port: 5173, strictPort: true },
+  // Port bira Vite (prvi slobodan od 5173); dev.mjs čita stvarnu adresu.
+  server: { host: '127.0.0.1' },
   build: { outDir: r('./dist/renderer'), emptyOutDir: true, target: 'es2022' },
 });
