@@ -102,3 +102,50 @@ h1 {
 .facts dd {
   margin: 0;
 }
+
+h2 {
+  margin: 18px 0 6px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.group {
+  margin: 0 0 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.choice {
+  display: block;
+  padding: 3px 0;
+}
+
+.search {
+  width: 100%;
+  max-width: 360px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+
+.grid {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.grid th,
+.grid td {
+  padding: 3px 10px 3px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.grid th {
+  color: var(--muted);
+  font-weight: 500;
+}
