@@ -5,9 +5,10 @@ binarni WT Input `.tab`. Nastala je iz web aplikacije [csv2tab](https://github.c
 jezgro konverzije, ali ima **svoj interfejs i svoju bazu**. Ovaj dokument je plan cele aplikacije. Pravila rada za
 agente su u `AGENTS.md`.
 
-Stanje: **faze 1 (osnova) i 2 (baza) su gotove**: prozor sa bočnom trakom, `app://` protokol, most, jezgro preko
-`@core`, SQLite baza sa migracijama, podešavanja (tema) i katalog. Poslova i uvoza još nema; `node:sqlite` na Windowsu
-nije proveren. Kad se faza završi, označi je u odeljku [Faze](#faze).
+Stanje: **faze 1 (osnova), 2 (baza) i 3 (uvoz, pregled, izvoz) su gotove**: uvoz fajla (dijalog i prevlačenje), tabela
+zapisa sa izmenom, materijali, mapiranje kolona, izvoz u WT folder sa poređenjem pre prepisivanja i poseban prozor
+poređenja. Posao se drži samo u memoriji (jedan otvoren); čuvanje, lista poslova i pamćenje izbora stižu u fazama 4 i 5.
+`node:sqlite` na Windowsu nije proveren. Kad se faza završi, označi je u odeljku [Faze](#faze).
 
 ## Cilj
 
@@ -60,12 +61,14 @@ csv2tab-app/
 │  ├─ main/                glavni proces
 │  │  ├─ index.ts          prozori, app:// protokol, meni, jedna instanca
 │  │  ├─ db/               baza: otvaranje, migracije, katalog, podešavanja (bez Electrona, radi i u Node-u)
-│  │  ├─ files.ts          dijalozi, čitanje i upis fajlova, WT folder
+│  │  ├─ files.ts          dijalozi za fajl i folder (u testu zaobiđeni promenljivom okruženja)
+│  │  ├─ export.ts         provera i atomičan upis .tab fajlova u WT folder; exportName.ts: bezbedno ime
 │  │  ├─ operations/       IPC operacije po oblastima (app, settings, catalog ...), svaka sa validate + run
 │  │  └─ ipc.ts            registracija IPC operacija
 │  ├─ preload/index.ts     most: contextBridge izlaže window.api
-│  ├─ shared/              api.ts: tipovi mosta; settings.ts: ključevi podešavanja sa tipom i proverom
-│  └─ renderer/            interfejs (React + TypeScript)
+│  ├─ shared/              api.ts: tipovi mosta; settings.ts: ključevi podešavanja sa tipom i proverom;
+│  │                       job.ts: JobState, stanje jednog uvezenog fajla (obični JSON)
+│  └─ renderer/            interfejs (React + TypeScript); job/derive.ts izvodi zapise iz bajtova + JobState
 ├─ migrations/             numerisane SQL migracije
 ├─ build/                  ikonice i resursi za electron-builder
 ├─ tests/                  testovi baze i smoke test aplikacije
@@ -146,7 +149,7 @@ stavlja na mrežni disk.
 
 | Tabela | Kolone |
 | --- | --- |
-| `settings` | `key` (PK), `value` (JSON). Ključevi su zatvoren skup u `src/shared/settings.ts` (za sada samo `theme`: `system` / `light` / `dark`), svaki sa tipom i proverom. Nema ključa u bazi = podrazumevana vrednost. |
+| `settings` | `key` (PK), `value` (JSON). Ključevi su zatvoren skup u `src/shared/settings.ts` (`theme`: `system` / `light` / `dark`; `wtFolder`: putanja, prazno = nije zadat), svaki sa tipom i proverom. Nema ključa u bazi = podrazumevana vrednost. Folder-ključevi (`folder: true` u definiciji) se ne upisuju kroz `settings.set`, nego samo izborom u dijalogu (`files.chooseFolder`); faza 5 dodaje folder za rezervne kopije istim putem. |
 | `materials` | `id` (PK), `source` (`builtin` / `user`), `code`, `name`, `sheet_w`, `sheet_h`, `thickness`, `grain` (0/1), `position` (redosled iz kataloga). `code` je jedinstven među `builtin` redovima (parcijalni indeks); korisnikov red sme da ima istu šifru. |
 | `edge_bands` | `id` (PK), `source`, `code`, `name`, `position`; ista pravila kao za materijale. |
 | `meta` | `key` (PK), `value`: unutrašnji podaci (`catalog_hash`). Ne izlaže se rendereru. |
@@ -161,6 +164,13 @@ Tabele ispod su još nacrt; svaka stiže kao **nova migracija** u fazi koja je k
 | `material_map` | naziv materijala iz CSV-a → WT materijal, traka, „Prati teksturu" |
 | `column_maps` | potpis zaglavlja → mapiranje kolona |
 
+- **Stanje posla (`JobState`, faza 3).** Tip je u `src/shared/job.ts`, običan JSON bez `Map`/`Set`/`Uint8Array`:
+  kodiranje, separator, list, mapiranje (`'auto'` ili izbor), spajanje, izbor po materijalu (`MaterialChoice`: WT
+  materijal, traka, „Prati teksturu", ime fajla; odsutno polje = predlog) i ručne izmene po ključu zapisa. Sve izvedeno
+  računa čista funkcija `deriveJob(file, state, catalog, rules, cache?)` u `src/renderer/job/derive.ts`; prelazi stanja
+  (promena izvora briše izmene) su u `src/renderer/job/state.ts`. Faza 4 čuva `bajtovi izvora + JobState` i poziva
+  `deriveJob` pri otvaranju; interfejs ne sme da drži nijednu odluku van `JobState`. Podrazumevana pravila kantovanja i
+  spajanje dolaze iz `src/renderer/job/defaults.ts` (faza 5 ih menja sačuvanim vrednostima).
 - **Posao čuva ulaz i odluke, ne samo rezultat.** `jobs.state` nosi ono što web drži u `FileEntry`: kodiranje,
   separator, list, mapiranje kolona, spajanje, izbor po materijalu, ime fajla i ručne izmene. Pri otvaranju se zapisi
   ponovo računaju jezgrom iz sačuvanih bajtova izvornog fajla. Fajlovi su mali (KB do nekoliko MB), pa stoje u bazi.
@@ -216,9 +226,14 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
       *Gotovo kad:* testovi baze prolaze (prazna baza, migracija sa prethodne šeme, odbijanje novije baze), a
       podešavanje upisano kroz interfejs preživljava restart. Proveriti `node:sqlite` na Windowsu.
       **Otvoreno:** `node:sqlite` je proveren samo na Linuxu; provera na Windowsu ostaje za ručnu probu (i za fazu 7).
-- [ ] **3. Uvoz, pregled, izvoz**: uvoz fajla (dijalog i prevlačenje), mapiranje kolona, tabela zapisa sa izmenom,
+- [x] **3. Uvoz, pregled, izvoz**: uvoz fajla (dijalog i prevlačenje), mapiranje kolona, tabela zapisa sa izmenom,
       materijali, izvoz u WT folder sa poređenjem pre prepisivanja, prozor za poređenje. *Gotovo kad:* fixture izvezen
-      kroz aplikaciju je bajt-identičan referentnom `.tab`, a izvoz preko postojećeg fajla prikazuje razlike.
+      kroz aplikaciju je bajt-identičan onome što jezgro daje za isti fajl (referentni `Kronospan Kasmir.tab` je
+      ručno pravljen i namerno se razlikuje od CSV-a, pa nije mera), izvoz preko postojećeg fajla prikazuje razlike
+      (ručni `.tab` naspram izvoza: 10 zapisa različito) i ništa ne prepisuje bez potvrde, a izmena ćelije kroz
+      interfejs stiže u izvezeni fajl. Provereno smoke testom na Linuxu; na Windowsu nije.
+      **Otvoreno:** tabela zapisa crta samo vidljive redove (bez ograničenja od 3000 kao u webu); CSV se parsira u
+      glavnoj niti rendera (bez Workera); provereno sa 6000 redova.
 - [ ] **4. Poslovi**: čuvanje posla (izvor, `state`, zapisi, izvozi), lista sa pretragom, ponovno otvaranje, oznaka
       „menjano posle izvoza". *Gotovo kad:* posao sa ručnim izmenama posle restarta daje isti `.tab` bez originalnog
       fajla na disku.
@@ -249,7 +264,9 @@ Kasnije, redosled nije utvrđen:
   migracije, upiti, punjenje kataloga.
 - **Smoke test** (Playwright `_electron`): pokreni aplikaciju sa privremenim `userData`, uvezi fixture, izvezi u
   privremeni folder, uporedi bajtove sa referentnim `.tab`, ponovo pokreni i proveri da posao postoji. Dijalozi se u
-  testu zaobilaze promenljivom okruženja koja zadaje putanju.
+  testu zaobilaze promenljivama okruženja `CSV2TAB_TEST_IMPORT`, `CSV2TAB_TEST_COMPARE` i `CSV2TAB_TEST_FOLDER` koje
+  glavni proces čita pri svakom pozivu, ali samo uz `CSV2TAB_TEST=1` i nikad u spakovanoj aplikaciji
+  (`src/main/testHooks.ts`).
 - Ručna provera na Windowsu pre svakog izdanja: instalacija preko prethodne verzije, otvaranje fajla sa dijakritikom
   u imenu i putanji, izvoz u folder sa postojećim fajlovima.
 
