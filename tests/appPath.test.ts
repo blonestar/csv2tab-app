@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolve } from 'node:path';
+import { resolve, sep } from 'node:path';
 import { resolveAppPath } from '../src/main/appPath';
 
 const root = resolve('/srv/renderer');
@@ -13,7 +13,7 @@ describe('app:// putanje', () => {
   });
   it('URL parser skraćuje ".." pre nego što stigne do nas; rezultat ostaje u folderu', () => {
     for (const p of ['/../x', '/%2e%2e/x', '/a/%2e%2e/%2e%2e/x', '//etc/passwd', '/%2Fetc/passwd']) {
-      expect(ok(p)?.startsWith(root + '/'), p).toBe(true);
+      expect(ok(p)?.startsWith(root + sep), p).toBe(true);
     }
   });
   it('odbija kodirane separatore, prazne i neispravne putanje', () => {

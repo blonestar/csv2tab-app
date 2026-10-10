@@ -9,7 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { _electron } from 'playwright-core';
 
 const executablePath = process.argv[2] && resolve(process.argv[2]);
-if (!executablePath || !existsSync(executablePath)) throw new Error('Zadajte putanju izgrađenog paketa (AppImage ili izvršni fajl).');
+if (!executablePath || !existsSync(executablePath)) throw new Error('Zadajte putanju AppImage-a ili raspakovane aplikacije.');
 const root = resolve(import.meta.dirname, '..');
 const temp = mkdtempSync(join(tmpdir(), 'csv2tab-package-'));
 const userData = join(temp, 'podaci');

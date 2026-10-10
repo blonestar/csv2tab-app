@@ -11,7 +11,8 @@ Podešavanja imaju tabelu kantovanja, pravilo za jednobojne dekore, spajanje, fo
 vraćanjem. Meni ima prečice, jedna instanca prima fajlove iz argumenata i drugih pokretanja, a glavni prozor
 pamti veličinu i položaj. Pakovanje daje AppImage za Linux i ima konfiguraciju za NSIS i portable za Windows x64.
 AppImage je pokrenut na Fedori: migrira staru bazu, uvozi i ponavlja izvoz posle restarta bez izvornog fajla.
-Windows instalacija i `node:sqlite` na Windowsu još nisu provereni.
+CI pokreće build, testove i smoke na Linuxu i Windowsu i gradi sva tri paketa. `node:sqlite` je proveren i na
+Windows CI runneru; ručna instalacija, nadogradnja, portable omotač i deinstalacija na Windowsu 10/11 ostaju otvoreni.
 
 ## Cilj
 
@@ -96,7 +97,8 @@ csv2tab-app/
 - **React** za interfejs. Aplikacija ima liste, tabele sa izmenom ćelija i forme za podešavanja, pa ručni DOM kao u
   webu (`main.ts` ima 1400 redova) ne bi bio održiv.
 - **SQLite preko ugrađenog `node:sqlite`**, bez nativnog modula. Provereno 10. 10. 2026. na Linuxu: Electron 44.7.0,
-  glavni proces, `DatabaseSync` radi (SQLite 3.53.4). Na Windowsu još nije provereno; to je deo faze 2.
+  glavni proces, `DatabaseSync` radi (SQLite 3.53.4). Proveren je na Linuxu i u Electronu na Windows CI runneru;
+  ručna proba na Windowsu 10/11 ostaje otvorena.
   `better-sqlite3` je rezerva ako se pokaže problem.
 - `fflate` (potreban jezgru za ODS/XLSX) je zavisnost ovog repoa; build mora da ga razreši i za fajlove iz `web/`.
 
@@ -292,6 +294,13 @@ stavlja na mrežni disk.
   i `npm run pack`; rezultat je u `release/`.
 - CI: GitHub Actions, matrica `windows-latest` + `ubuntu-latest`, pokreće se na tag `v*`, gradi pakete i kači ih na
   GitHub Release. Po odluci korisnika oba repoa su javna, pa submodul ne traži poseban ključ ili token.
+  `.gitmodules` koristi HTTPS. PR-ovi, `main` i ručno pokretanje rade iste provere i čuvaju pakete kao artefakte
+  14 dana. Na Linuxu smoke koristi Xvfb; na Windowsu normalan prozor. Proverava se i stvarni AppImage odnosno
+  raspakovan Windows paket koji ulazi u NSIS i portable, uključujući `node:sqlite`, migracije i izvoz posle restarta.
+  Pokušaj neposrednog Playwright povezivanja sa portable omotačem istekao je posle 60 s; omotač se gradi,
+  a njegovo pokretanje i NSIS instalacija/nadogradnja/deinstalacija ostaju za ručnu probu na Windowsu 10/11.
+  Tag mora da bude tačno `v<version iz package.json>`. Release se pravi kao nacrt tek kad oba sistema prođu,
+  zatim dobija tri paketa i objavljuje se. Pristup za pisanje dobija samo posao za Release. Tag se ne pravi automatski.
 
 ## Faze
 
@@ -306,19 +315,20 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
 - [x] **2. Baza**: `node:sqlite`, migracije, `settings`, punjenje kataloga, IPC operacije sa proverom argumenata.
       *Gotovo kad:* testovi baze prolaze (prazna baza, migracija sa prethodne šeme, odbijanje novije baze), a
       podešavanje upisano kroz interfejs preživljava restart. Proveriti `node:sqlite` na Windowsu.
-      **Otvoreno:** `node:sqlite` je proveren samo na Linuxu; provera na Windowsu ostaje za ručnu probu (i za fazu 7).
+      `node:sqlite` je proveren i kroz unit testove, smoke i raspakovanu aplikaciju na Windows CI runneru.
+      **Otvoreno:** ručna proba instaliranog i portable paketa na Windowsu 10/11.
 - [x] **3. Uvoz, pregled, izvoz**: uvoz fajla (dijalog i prevlačenje), mapiranje kolona, tabela zapisa sa izmenom,
       materijali, izvoz u WT folder sa poređenjem pre prepisivanja, prozor za poređenje. *Gotovo kad:* fixture izvezen
       kroz aplikaciju je bajt-identičan onome što jezgro daje za isti fajl (referentni `Kronospan Kasmir.tab` je
       ručno pravljen i namerno se razlikuje od CSV-a, pa nije mera), izvoz preko postojećeg fajla prikazuje razlike
       (ručni `.tab` naspram izvoza: 10 zapisa različito) i ništa ne prepisuje bez potvrde, a izmena ćelije kroz
-      interfejs stiže u izvezeni fajl. Provereno smoke testom na Linuxu; na Windowsu nije.
+      interfejs stiže u izvezeni fajl. Provereno na Linuxu i na Windows CI runneru kroz smoke.
       **Otvoreno:** tabela zapisa crta samo vidljive redove (bez ograničenja od 3000 kao u webu); CSV se parsira u
       glavnoj niti rendera (bez Workera); provereno sa 6000 redova.
 - [x] **4. Poslovi**: čuvanje posla (izvor, `state`, zapisi, izvozi), lista sa pretragom, ponovno otvaranje, oznaka
       „menjano posle izvoza". *Gotovo kad:* posao sa ručnim izmenama posle restarta daje isti `.tab` bez originalnog
       fajla na disku. Provereno smoke testom na Linuxu (izvoz u prazan folder posle restarta je bajt-identičan prvom);
-      na Windowsu nije.
+      ponovljeno na Windows CI runneru; ručna Windows 10/11 proba ostaje otvorena.
       **Otvoreno:** nema poređenja sa sačuvanim izvozom u interfejsu (bajtovi su u bazi); nema izmene imena fajla ni
       ponovnog uvoza istog posla sa novog mesta; posao ne pamti u kom WT folderu je poslednji put izvezen osim kroz
       istoriju izvoza.
@@ -326,13 +336,15 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
       kantova, pravila, tema), rezervna kopija i vraćanje. *Gotovo kad:* drugi uvoz fajla sa istim materijalima ne
       traži nijedan ručni izbor. Provereno smoke testom na Linuxu, uključujući snimak pravila i vraćanje kopije.
 - [x] **6. Desktop integracija**: meni i prečice, jedna instanca, otvaranje fajlova iz argumenata i druge instance,
-      pamćenje veličine i položaja prozora. Provereno na Linuxu kroz smoke; Windows čeka proveru.
+      pamćenje veličine i položaja prozora. Provereno kroz smoke na Linuxu i na Windows CI runneru.
 - [ ] **7. Pakovanje**: electron-builder, ikonice, asocijacije fajlova. *Gotovo kad:* AppImage radi na Fedori, a
       NSIS instalacija i portable `.exe` rade na čistom Windows 10/11 (instalacija, „Otvori pomoću", nadogradnja
       preko starije verzije bez gubitka baze, deinstalacija).
       **Implementirano i provereno na Linuxu:** AppImage, migracije iz paketa, uvoz sa dijakritikom i isti izvoz
       posle restarta. NSIS i portable su podešeni; ručna proba na čistom Windowsu ostaje otvorena.
-- [ ] **8. CI i izdanja**: GitHub Actions na tag, paketi na Release, testovi i smoke test u CI-u.
+- [x] **8. CI i izdanja**: GitHub Actions na tag, paketi na Release, testovi i smoke test u CI-u.
+      Matrica proverava aplikaciju i pakovanje na oba sistema. Objavljivanje Release-a čeka prvi tag koji
+      korisnik zatraži; u ovoj fazi tag nije napravljen i izdanje nije objavljeno.
 
 Kasnije, redosled nije utvrđen:
 
@@ -357,7 +369,7 @@ Kasnije, redosled nije utvrđen:
   `CSV2TAB_TEST_RESTORE` i `CSV2TAB_TEST_FAIL_SAVE` (svako čuvanje posla pada) koje
   glavni proces čita pri svakom pozivu, ali samo uz `CSV2TAB_TEST=1` i nikad u spakovanoj aplikaciji
   (`src/main/testHooks.ts`).
-- **Provera paketa**: `npm run test:package -- <AppImage ili izvršni fajl>` pokreće paket nad privremenom bazom
+- **Provera paketa**: `npm run test:package -- <AppImage ili raspakovan izvršni fajl>` pokreće paket nad privremenom bazom
   šeme 1, proverava migracije iz asara, uvoz iz `file://` argumenta sa dijakritikom, izvoz i ponavljanje izvoza
   posle restarta bez izvornog fajla. Proverava i da razvojni URL i testne prečice nisu dostupni u paketu.
 - Ručna provera na Windowsu pre svakog izdanja: instalacija preko prethodne verzije, otvaranje fajla sa dijakritikom

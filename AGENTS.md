@@ -42,9 +42,9 @@ kad promena to zahteva. Format je `MAJOR.MINOR.PATCH`.
 
 ## Pull request i merge
 
-Repo je `blonestar/csv2tab-app` (privatan). Posle otvaranja PR-a agent ga **sam mergeuje** u `main` kad provere prođu.
-Dok CI ne postoji (faza 8 u `PROJECT.md`), PR nema provera, pa agent pre merge-a sam pokreće proveru iz odeljka
-„Provera pre predaje" i navodi rezultat u PR-u.
+Repo je `blonestar/csv2tab-app` (javan, kao i submodul `blonestar/csv2tab`). Posle otvaranja PR-a agent ga
+**sam mergeuje** u `main` kad provere prođu. GitHub Actions proverava Linux i Windows, uključujući pakovanje;
+agent pre merge-a pokreće i lokalnu proveru iz odeljka „Provera pre predaje" i navodi stvarne rezultate u PR-u.
 
 1. Otvori PR, pa `gh pr checks <broj> --watch --fail-fast` (ako provere postoje).
 2. Ako su provere prošle: `gh pr merge <broj> --merge --delete-branch`, pa lokalno `git switch main && git pull`.
