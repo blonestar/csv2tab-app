@@ -58,8 +58,10 @@ Dok CI ne postoji (faza 8 u `PROJECT.md`), PR nema provera, pa agent pre merge-a
 ## Provera pre predaje
 
 - Jezgro: `npm --prefix web test` ako je submodul pomeren.
-- Aplikacija: typecheck, build, testovi baze i smoke test, čim postoje (faze 1 do 3 u `PROJECT.md`). Dok ne
-  postoje, proveri da `npm run web:build` prolazi.
+- Aplikacija: `npm run typecheck`, `npm run build` (već pokreće typecheck), `npm test` (vitest: jezgro preko `@core`,
+  `app://` putanje), `npm run test:smoke` (pokreće **izgrađenu** aplikaciju kroz Playwright, treba prozor/ekran).
+  Testovi baze stižu u fazi 2. `npm run web:build` i dalje mora da prolazi.
+- Posle `npm ci` Electron se preuzima pri prvom pokretanju; ako ne uspe: `node node_modules/electron/install.js`.
 - Electron pokrenut iz alata koji je i sam Electron aplikacija može da nasledi `ELECTRON_RUN_AS_NODE=1` i tada se
   ponaša kao običan Node. Pokreći ga sa `env -u ELECTRON_RUN_AS_NODE`.
 - Ne tvrdi da nešto radi na Windowsu ako je provereno samo na Linuxu. Napiši šta je gde provereno.
