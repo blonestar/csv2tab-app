@@ -1,6 +1,7 @@
 // Most: izlaže window.api sa imenovanim operacijama. Mora da bude jedan CommonJS fajl (sandbox: true).
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Api } from '../shared/api';
+import { MAIN_COMMANDS, type MainCommand } from '../shared/api';
 
 const api: Api = {
   app: {
@@ -16,6 +17,7 @@ const api: Api = {
   },
   files: {
     open: (purpose) => ipcRenderer.invoke('files.open', purpose),
+    next: (...args) => ipcRenderer.invoke('files.next', ...args),
     chooseFolder: (key) => ipcRenderer.invoke('files.chooseFolder', key),
   },
   export: {
@@ -46,6 +48,13 @@ const api: Api = {
     finish: () => ipcRenderer.invoke('backup.finish'),
   },
   lifecycle: {
+    onCommand(handler) {
+      const listener = (_event: unknown, command: unknown) => {
+        if ((MAIN_COMMANDS as readonly unknown[]).includes(command)) handler(command as MainCommand);
+      };
+      ipcRenderer.on('app.command', listener);
+      return () => void ipcRenderer.removeListener('app.command', listener);
+    },
     onFlushRequest(handler) {
       const listener = () => {
         void handler().then(

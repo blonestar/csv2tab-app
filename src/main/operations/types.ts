@@ -1,5 +1,6 @@
 import type { AppDatabase, OpenOptions } from '../db';
 import type { ComparePayload, IpcChannel, IpcOperations } from '../../shared/api';
+import type { OpenedFile } from '../../shared/job';
 
 export interface Operation<K extends IpcChannel> {
   /** Baca grešku ako argumenti nemaju očekivani oblik; inače ih vraća sa tačnim tipom. */
@@ -21,6 +22,7 @@ export interface IpcContext {
   applySetting(key: string, value: unknown): void;
   /** Prozori poređenja; podaci stoje u glavnom procesu, prozor dobija samo id u adresi. */
   windows: {
+    nextFile(): Promise<OpenedFile | null>;
     openCompare(payload: ComparePayload): void;
     getCompare(id: string): ComparePayload | undefined;
     /** Traži od glavnog prozora da upiše nesačuvano; true ako je sve u bazi (ili prozora nema). */

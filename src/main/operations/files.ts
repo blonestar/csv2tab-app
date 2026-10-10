@@ -3,10 +3,14 @@ import { getSetting, setSetting } from '../db/settings';
 import { openFile, pickFolder } from '../files';
 import { isFolderSetting, isSettingKey, type FolderSettingKey } from '../../shared/settings';
 import type { OpenPurpose } from '../../shared/api';
-import type { IpcContext, Operation } from './types';
+import { noArgs, type IpcContext, type Operation } from './types';
 
 export function filesOperations(ctx: IpcContext) {
   return {
+    'files.next': {
+      validate: noArgs,
+      run: () => ctx.windows.nextFile(),
+    } satisfies Operation<'files.next'>,
     'files.open': {
       validate(args) {
         if (args.length !== 1 || (args[0] !== 'import' && args[0] !== 'compare')) throw new Error('Očekivana je svrha: import ili compare.');

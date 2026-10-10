@@ -27,6 +27,10 @@ export interface AppInfo {
 /** Koji dijalog za otvaranje fajla: uvoz (csv, ods, xlsx, tab) ili samo .tab za poređenje. */
 export type OpenPurpose = 'import' | 'compare';
 
+export const MAIN_COMMANDS = ['import', 'export', 'search', 'settings', 'about', 'pending-files', 'theme-changed'] as const;
+export type MainCommand = (typeof MAIN_COMMANDS)[number];
+export interface MenuRequest { id: number; kind: MainCommand }
+
 /** Fajl za upis u WT folder. Ime je samo predlog: glavni proces ga svodi na osnovno ime sa ekstenzijom .tab. */
 export interface ExportItem {
   name: string;
@@ -120,6 +124,7 @@ export interface IpcOperations {
   'settings.set': { args: [key: SettingKey, value: unknown]; result: SettingsMap[SettingKey] };
   'catalog.get': { args: []; result: WtCatalog };
   'files.open': { args: [purpose: OpenPurpose]; result: OpenedFile | null };
+  'files.next': { args: []; result: OpenedFile | null };
   'files.chooseFolder': { args: [key: FolderSettingKey]; result: string | null };
   'export.check': { args: [items: ExportItem[]]; result: ExportCheck };
   'export.write': { args: [items: ExportItem[], overwrite: string[], jobId: number | null]; result: ExportWriteResult };
@@ -164,6 +169,8 @@ export interface Api {
   files: {
     /** Dijalog za otvaranje fajla u glavnom procesu; null kad korisnik odustane. */
     open(purpose: OpenPurpose): Promise<OpenedFile | null>;
+    /** Sledeći fajl iz argumenata procesa; putanja ostaje u glavnom procesu. */
+    next(): Promise<OpenedFile | null>;
     /** Dijalog za izbor foldera; izabrana putanja se upisuje u bazu. null kad korisnik odustane. */
     chooseFolder(key: FolderSettingKey): Promise<string | null>;
   };
@@ -210,6 +217,7 @@ export interface Api {
     finish(): Promise<void>;
   };
   lifecycle: {
+    onCommand(handler: (command: MainCommand) => void): () => void;
     /** Glavni proces traži da se sve nesačuvano upiše pre zatvaranja prozora; poziv vraća funkciju za odjavu. */
     onFlushRequest(handler: () => Promise<boolean>): () => void;
   };

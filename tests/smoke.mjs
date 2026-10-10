@@ -7,6 +7,7 @@
 // poštuje samo uz CSV2TAB_TEST=1. Čeka se na uslove na stranici (indikator „sačuvano“), nikad na fiksno vreme.
 // Pokreće se posle `npm run build`.
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
@@ -25,7 +26,7 @@ delete env.CSV2TAB_DEV_URL;
 const userData = mkdtempSync(join(tmpdir(), 'csv2tab-smoke-'));
 const extraDirs = [];
 // colorScheme: null — Playwright inače nameće "light" i prefers-color-scheme ne bi pratio nativeTheme.
-const launch = () => _electron.launch({ executablePath: electron, args: [root, `--user-data-dir=${userData}`], env, timeout: 30000, colorScheme: null });
+const launch = (files = []) => _electron.launch({ executablePath: electron, args: [root, `--user-data-dir=${userData}`, ...files], env, timeout: 30000, colorScheme: null });
 const isDark = (page) => page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches);
 const bodyBg = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 let app = await launch();
@@ -266,6 +267,7 @@ try {
       await t(() => window.api.backup.restore('nije-oznaka')),
       await t(() => window.api.backup.restore('00000000-0000-0000-0000-000000000000')),
       await t(() => window.api.jobs.save(12345, { state: goodState, parts: [], outputs: [], remember: { materials: [{ name: '', wt: 'X' }] } })),
+      await t(() => window.api.files.next('/tmp/fajl.csv')),
     ];
   }, fx(HAND));
   assert.ok(guard.every((m) => m !== 'ok'), `neispravan poziv prošao: ${guard.map((m, i) => `${i}:${m}`).filter((m) => m.endsWith(':ok'))}`);
@@ -915,6 +917,98 @@ try {
   assert.equal(await page.textContent('[data-testid=backup-folder]'), backupFolder);
   console.log('rezervna kopija kroz interfejs: otvara se i ima poslove; odustajanje ostavlja bazu, vraćanje zamenjuje podatke i čuva prethodnu bazu');
 
+  // ---------- meni, prečice, argumenti, jedna instanca i prozor ----------
+  const menuClick = (id) => app.evaluate(({ Menu }, id) => {
+    const item = Menu.getApplicationMenu().getMenuItemById(id);
+    if (!item) throw new Error(`Nema stavke menija ${id}`);
+    item.click();
+  }, id);
+  // CDP keyboard.press zaobilazi Electronove native akceleratore; sendInputEvent prolazi istim putem kao tastatura.
+  const shortcut = (key) => app.evaluate(({ BrowserWindow }, key) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.focus();
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: key, modifiers: ['control'] });
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: key, modifiers: ['control'] });
+  }, key);
+  await menuClick('about');
+  await page.waitForSelector('[data-testid=app-info]');
+  await menuClick(`theme-${other}`);
+  await waitTheme(page, other);
+  await menuClick('settings');
+  await page.waitForSelector(`input[name=theme][value=${other}]:checked`);
+  await menuClick(`theme-${keep}`);
+  await waitTheme(page, keep);
+  const shortcuts = join(srcDir, 'Prečice.csv');
+  writeFileSync(shortcuts, readFileSync(copies[0], 'utf8').replace('2437,0 mm', '2440,0 mm'));
+  await setEnv('CSV2TAB_TEST_IMPORT', shortcuts);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
+  await shortcut('O');
+  await page.waitForSelector('[data-testid=jobview][data-file="Prečice.csv"]');
+  await waitSaved();
+  const shortcutId = await jobId();
+  const shortcutWt = mkdtempSync(join(tmpdir(), 'csv2tab-shortcuts-'));
+  extraDirs.push(shortcutWt);
+  await chooseWtFolder(shortcutWt);
+  await nav('Poslovi');
+  const shortQty = page.locator('tr[data-key] input[data-field=qty]').first();
+  await shortQty.fill('8'); // prečica mora da prihvati i unos koji još nije potvrđen tasterom Enter
+  await shortcut('S');
+  await waitBanner('ok');
+  await waitSaved();
+  const shortcutJob = await page.evaluate((id) => window.api.jobs.get(+id), shortcutId);
+  assert.ok(Object.values(shortcutJob.state.edits).some((edit) => edit.qty === 8));
+  assert.ok(existsSync(join(shortcutWt, shortcutJob.outputs[0].name)));
+  await shortcut('F');
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'job-search');
+  assert.equal(await page.$('[data-testid=jobview]'), null);
+  console.log('meni i Ctrl+O / Ctrl+S / Ctrl+F: uvoz, izvoz sa potvrdom unosa, čuvanje i fokus pretrage rade');
+
+  const argvFiles = ['Prvi argument.csv', 'Drugi argument.csv', 'Drugi proces.csv'].map((name, i) => {
+    const file = join(srcDir, name);
+    writeFileSync(file, readFileSync(copies[0], 'utf8').replace('2437,0 mm', `${2450 + i},0 mm`));
+    return file;
+  });
+  const beforeArguments = (await jobsApi()).total;
+  await app.close();
+  app = await launch(argvFiles.slice(0, 2));
+  page = await app.firstWindow();
+  watch(page);
+  await page.waitForSelector('[data-testid=jobview][data-file="Drugi argument.csv"]');
+  await waitSaved();
+  assert.equal((await jobsApi()).total, beforeArguments + 2);
+  const secondInstance = (file) => new Promise((resolve, reject) => {
+    const child = spawn(electron, [root, `--user-data-dir=${userData}`, file], { cwd: srcDir, env, stdio: 'ignore' });
+    const timeout = setTimeout(() => { child.kill(); reject(new Error('Druga instanca nije izašla za 30 s.')); }, 30000);
+    child.on('error', (e) => { clearTimeout(timeout); reject(e); });
+    child.on('exit', (code) => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error(`Druga instanca: exit ${code}`)); });
+  });
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
+  await secondInstance('Drugi proces.csv'); // relativna putanja razrešava se u folderu drugog procesa
+  await page.waitForSelector('[data-testid=jobview][data-file="Drugi proces.csv"]');
+  await waitSaved();
+  assert.equal((await jobsApi()).total, beforeArguments + 3);
+  assert.deepEqual(await app.evaluate(({ app, BrowserWindow }) => ({ locked: app.hasSingleInstanceLock(), windows: BrowserWindow.getAllWindows().length, minimized: BrowserWindow.getAllWindows()[0].isMinimized() })), { locked: true, windows: 1, minimized: false });
+  await secondInstance('Prvi argument.csv');
+  await page.waitForSelector('[data-testid=duplicate-dialog]');
+  await page.click('[data-testid=duplicate-cancel]');
+  await page.waitForSelector('[data-testid=duplicate-dialog]', { state: 'detached' });
+  assert.equal((await jobsApi()).total, beforeArguments + 3);
+  await waitSaved();
+  const finalTotal = (await jobsApi()).total;
+  const expectedBounds = await app.evaluate(({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows()[0];
+    win.setBounds({ x: 200, y: 100, width: 980, height: 650 });
+    return win.getNormalBounds();
+  });
+  await app.close();
+  app = await launch();
+  page = await app.firstWindow();
+  watch(page);
+  await page.waitForSelector('[data-testid=import]');
+  assert.deepEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getNormalBounds()), expectedBounds);
+  assert.equal((await jobsApi()).total, finalTotal);
+  console.log('argumenti: dva fajla pri pokretanju, relativna putanja iz druge instance, fokus i duplikat; položaj i veličina preživljavaju restart');
+
   assert.deepEqual(problems, [], `CSP ili greške u konzoli: ${problems.join(' | ')}`);
   await app.close();
   {
@@ -922,7 +1016,7 @@ try {
     assert.equal(db.prepare('PRAGMA foreign_key_check').all().length, 0);
     assert.equal(db.prepare('SELECT count(*) AS n FROM job_parts WHERE job_id NOT IN (SELECT id FROM jobs)').get().n, 0);
     assert.equal(db.prepare('SELECT count(*) AS n FROM exports WHERE job_id NOT IN (SELECT id FROM jobs)').get().n, 0);
-    assert.equal(db.prepare('SELECT count(*) AS n FROM jobs').get().n, beforeRestore);
+    assert.equal(db.prepare('SELECT count(*) AS n FROM jobs').get().n, finalTotal);
     db.close();
   }
 

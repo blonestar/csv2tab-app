@@ -5,10 +5,11 @@ binarni WT Input `.tab`. Nastala je iz web aplikacije [csv2tab](https://github.c
 jezgro konverzije, ali ima **svoj interfejs i svoju bazu**. Ovaj dokument je plan cele aplikacije. Pravila rada za
 agente su u `AGENTS.md`.
 
-Stanje: **faze 0–5 su gotove**. Uvoz pravi posao u bazi, izmene se čuvaju same, a posao se otvara i izvozi bez
+Stanje: **faze 0–6 su gotove**. Uvoz pravi posao u bazi, izmene se čuvaju same, a posao se otvara i izvozi bez
 originalnog fajla. Novi poslovi preuzimaju zapamćene izbore materijala i kolona i snimak pravila iz podešavanja.
 Podešavanja imaju tabelu kantovanja, pravilo za jednobojne dekore, spajanje, foldere, temu i rezervnu kopiju sa
-vraćanjem. Provere su na Linuxu; `node:sqlite` na Windowsu nije proveren.
+vraćanjem. Meni ima prečice, jedna instanca prima fajlove iz argumenata i drugih pokretanja, a glavni prozor
+pamti veličinu i položaj. Provere su na Linuxu; `node:sqlite` na Windowsu nije proveren.
 
 ## Cilj
 
@@ -146,6 +147,14 @@ zapisima. `.tab` fajl može i da se uveze kao posao radi pregleda i izmene.
 
 Meni i prečice: Uvezi (Ctrl+O), Izvezi (Ctrl+S), Pretraga (Ctrl+F), Podešavanja, tema, O programu.
 
+Jedna instanca (`requestSingleInstanceLock`) se zaključava pre otvaranja baze. Podržani fajlovi iz argumenata
+prvog ili drugog procesa ulaze u red u glavnom procesu; relativne putanje se razrešavaju u folderu procesa
+koji ih šalje. Renderer preuzima sledeće ime i bajtove kroz `files.next`, bez putanje. Važe ista pravila uvoza,
+duplikata i čuvanja kao kroz dijalog. Drugo pokretanje vraća minimizovan glavni prozor i daje mu fokus.
+Ctrl+F čuva i zatvara posao pre fokusa na pretragu liste; neuspešno čuvanje traži postojeću odluku o nastavku.
+Pri zatvaranju se pamte normalne granice prozora i maksimizacija, a pri pokretanju prilagođavaju dostupnim
+ekranima. Prozor poređenja ne menja sačuvani položaj glavnog prozora.
+
 ## Baza
 
 Jedan SQLite fajl u `app.getPath('userData')` (`csv2tab.db`), WAL režim. Radi se na jednom računaru; baza se ne
@@ -158,7 +167,7 @@ stavlja na mrežni disk.
 | `settings` | `key` (PK), `value` (JSON). Zatvoren skup u `src/shared/settings.ts`: `theme`, `wtFolder`, `backupFolder`, `edgeRules`, `decorRule`, `mergeDefault`, svaki sa strogom proverom. Nema ključa = podrazumevana vrednost. Folderi se upisuju samo izborom kroz `files.chooseFolder`; ostalo odmah kroz `settings.set`. |
 | `materials` | `id` (PK), `source` (`builtin` / `user`), `code`, `name`, `sheet_w`, `sheet_h`, `thickness`, `grain` (0/1), `position` (redosled iz kataloga). `code` je jedinstven među `builtin` redovima (parcijalni indeks); korisnikov red sme da ima istu šifru. |
 | `edge_bands` | `id` (PK), `source`, `code`, `name`, `position`; ista pravila kao za materijale. |
-| `meta` | `key` (PK), `value`: unutrašnji podaci (`catalog_hash`). Ne izlaže se rendereru. |
+| `meta` | `key` (PK), `value`: unutrašnji podaci (`catalog_hash`, `window_state`: JSON normalnih granica glavnog prozora i maksimizacije). Ne izlaže se rendereru. |
 
 **Migracija `0002_poslovi.sql` (faza 4)**, vremena su milisekunde (UTC):
 
@@ -307,8 +316,8 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
 - [x] **5. Pamćenje izbora i podešavanja**: `material_map`, `column_maps`, stranica podešavanja (folderi, tabela
       kantova, pravila, tema), rezervna kopija i vraćanje. *Gotovo kad:* drugi uvoz fajla sa istim materijalima ne
       traži nijedan ručni izbor. Provereno smoke testom na Linuxu, uključujući snimak pravila i vraćanje kopije.
-- [ ] **6. Desktop integracija**: meni i prečice, jedna instanca, otvaranje fajlova iz argumenata i druge instance,
-      pamćenje veličine i položaja prozora.
+- [x] **6. Desktop integracija**: meni i prečice, jedna instanca, otvaranje fajlova iz argumenata i druge instance,
+      pamćenje veličine i položaja prozora. Provereno na Linuxu kroz smoke; Windows čeka proveru.
 - [ ] **7. Pakovanje**: electron-builder, ikonice, asocijacije fajlova. *Gotovo kad:* AppImage radi na Fedori, a
       NSIS instalacija i portable `.exe` rade na čistom Windows 10/11 (instalacija, „Otvori pomoću", nadogradnja
       preko starije verzije bez gubitka baze, deinstalacija).

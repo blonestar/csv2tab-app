@@ -35,6 +35,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, []);
   useEffect(() => void reload(), [reload]);
+  useEffect(() => window.api.lifecycle.onCommand((c) => { if (c === 'theme-changed') void reload(); }), [reload]);
 
   const set = useCallback(async <K extends SettingKey>(key: K, value: SettingValue<K>) => {
     const saved = await window.api.settings.set(key, value);

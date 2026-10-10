@@ -7,7 +7,7 @@ import { STATUS_LABEL, errText, formatDateTime } from '../format';
 const PAGE = 50;
 const SEARCH_DELAY_MS = 250;
 
-export function JobList({ onOpen }: { onOpen: (id: number) => void }) {
+export function JobList({ onOpen, focusRequest = 0 }: { onOpen: (id: number) => void; focusRequest?: number }) {
   const [text, setText] = useState('');
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<JobListItem[]>([]);
@@ -17,6 +17,8 @@ export function JobList({ onOpen }: { onOpen: (id: number) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [more, setMore] = useState(false);
   const token = useRef(0);
+  const search = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (focusRequest) { search.current?.focus(); search.current?.select(); } }, [focusRequest]);
 
   useEffect(() => {
     const t = setTimeout(() => setQuery(text), SEARCH_DELAY_MS);
@@ -49,6 +51,7 @@ export function JobList({ onOpen }: { onOpen: (id: number) => void }) {
     <div className="joblist">
       <div className="listbar">
         <input
+          ref={search}
           type="search"
           className="search"
           data-testid="job-search"
