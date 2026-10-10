@@ -1,4 +1,4 @@
-import type { AppDatabase } from '../db';
+import type { AppDatabase, OpenOptions } from '../db';
 import type { ComparePayload, IpcChannel, IpcOperations } from '../../shared/api';
 
 export interface Operation<K extends IpcChannel> {
@@ -13,12 +13,20 @@ export interface IpcContext {
   testMode: boolean;
   /** Baza živi samo u glavnom procesu; renderer joj pristupa isključivo kroz operacije. */
   db: AppDatabase;
+  /** Kako se baza otvara (putanja, migracije, katalog); vraćanje iz kopije je ponovo otvara. */
+  dbOptions: OpenOptions;
+  /** Dok je true, sve operacije osim završetka vraćanja se odbijaju (baza je upravo zamenjena, a stari prozor još nije ponovo učitan). */
+  lock: { restoring: boolean };
   /** Primenjuje podešavanje na samu aplikaciju (npr. temu prozora). */
   applySetting(key: string, value: unknown): void;
   /** Prozori poređenja; podaci stoje u glavnom procesu, prozor dobija samo id u adresi. */
   windows: {
     openCompare(payload: ComparePayload): void;
     getCompare(id: string): ComparePayload | undefined;
+    /** Traži od glavnog prozora da upiše nesačuvano; true ako je sve u bazi (ili prozora nema). */
+    flushMain(): Promise<boolean>;
+    /** Zatvara prozore poređenja i ponovo učitava glavni prozor (posle vraćanja baze). */
+    reloadAfterRestore(): void;
     /** Renderer javlja da je sve nesačuvano upisano (ok) ili da nije uspelo. */
     flushed(ok: boolean): void;
   };

@@ -6,8 +6,10 @@ import type { JobState } from '../../shared/job';
 import { MaterialPicker } from '../components/MaterialPicker';
 import type { JobExports } from '../../shared/jobs';
 import { formatDateTime } from '../format';
+import { useSettings } from '../settings';
+import { sameEdgeRules } from '../../shared/edgeRules';
 import type { DerivedJob, SourceFile } from './derive';
-import { choiceOf, withAutoMapping, withChoice, withDelimiter, withEncoding, withMappingField, withMerge, withSheet } from './state';
+import { choiceOf, rulesDiffer, withAutoMapping, withChoice, withCurrentRules, withDelimiter, withEncoding, withMappingField, withMerge, withSheet } from './state';
 
 type SetState = (update: (s: JobState) => JobState) => void;
 interface TabProps {
@@ -22,6 +24,10 @@ export function MaterialsTab({ catalog, state, derived, setState }: TabProps & {
   if (!derived.materials.length) return <p className="muted">Nema materijala: posao nema zapisa.</p>;
   const isTab = derived.source.tab !== undefined;
   return (
+    <>
+    <p className="muted small" data-testid="materials-legend">
+      Oznake uz izbor: <b>iz pamćenja</b> = preuzeto iz prethodnih uvoza, <b>predlog</b> = automatski iz kataloga, <b>ručno</b> = izabrano u ovom poslu.
+    </p>
     <table className="grid materials-table" data-testid="materials-table">
       <colgroup>
         <col className="c-src" />
@@ -57,6 +63,7 @@ export function MaterialsTab({ catalog, state, derived, setState }: TabProps & {
                     catalog={catalog}
                     value={m.wt}
                     auto={c.wt === undefined}
+                    memory={c.fromMemory?.includes('wt')}
                     label={`WT materijal za ${name}`}
                     onPick={(code) => setState((s) => withChoice(s, m.source, { wt: code, grain: undefined }))}
                   />
@@ -69,6 +76,7 @@ export function MaterialsTab({ catalog, state, derived, setState }: TabProps & {
                     <option key={b.code} value={b.code}>{b.name} ({b.code})</option>
                   ))}
                 </select>
+                {c.fromMemory?.includes('band') ? <span className="muted tag" data-origin="memory" title="Preuzeto iz pamćenja izbora pri uvozu">iz pamćenja</span> : c.band ? <span className="muted tag" data-origin="manual" title="Izabrano ručno u ovom poslu">ručno</span> : null}
               </td>
               <td>
                 {!isTab ? (
@@ -79,7 +87,9 @@ export function MaterialsTab({ catalog, state, derived, setState }: TabProps & {
                       checked={m.grain === 1}
                       onChange={(e) => setState((s) => withChoice(s, m.source, { grain: e.target.checked ? 1 : 0 }))}
                     />{' '}
-                    <span className="muted">{m.grainFrom === 'manual' ? 'ručno' : m.grainFrom === 'catalog' ? 'iz kataloga' : 'podrazumevano'}</span>
+                    <span className="muted" data-origin={c.fromMemory?.includes('grain') ? 'memory' : m.grainFrom}>
+                      {c.fromMemory?.includes('grain') ? 'iz pamćenja' : m.grainFrom === 'manual' ? 'ručno' : m.grainFrom === 'catalog' ? 'iz kataloga' : 'podrazumevano'}
+                    </span>
                     {c.grain !== undefined && (
                       <button type="button" className="icon" title="Vrati na podrazumevano" aria-label="Vrati teksturu" onClick={() => setState((s) => withChoice(s, m.source, { grain: undefined }))}>↺</button>
                     )}
@@ -107,6 +117,7 @@ export function MaterialsTab({ catalog, state, derived, setState }: TabProps & {
         })}
       </tbody>
     </table>
+    </>
   );
 }
 
@@ -124,6 +135,36 @@ function colLetters(c: number): string {
     n = Math.floor(n / 26) - 1;
   } while (n >= 0);
   return s;
+}
+
+/** Snimak pravila u poslu naspram trenutnih podešavanja: obaveštenje i jedna radnja za primenu na ovaj posao. */
+function RulesNotice({ state, setState }: { state: JobState; setState: SetState }) {
+  const { settings } = useSettings();
+  if (!settings) return null;
+  const differs = rulesDiffer(state, settings);
+  return (
+    <section className="rules-box" data-testid="rules-box" data-differs={differs}>
+      <h2>Pravila kantovanja i teksture u ovom poslu</h2>
+      <p className="muted small">
+        Posao čuva svoju kopiju tabele šifara kantovanja i pravila za jednobojne dekore iz trenutka uvoza, pa kasnija
+        promena podešavanja ne menja njegove zapise.
+      </p>
+      <ul className="small">
+        <li data-testid="rules-edge">Tabela šifara kantovanja: {state.edgeRules.length} {state.edgeRules.length === 1 ? 'red' : 'redova'}{sameEdgeRules(state.edgeRules, settings.edgeRules) ? ' (isto kao u podešavanjima)' : ' (razlikuje se od podešavanja)'}</li>
+        <li data-testid="rules-decor">Jednobojni dekori ne prate teksturu po zadatku: {state.decorRule ? 'da' : 'ne'}{state.decorRule === settings.decorRule ? ' (isto kao u podešavanjima)' : ' (razlikuje se od podešavanja)'}</li>
+      </ul>
+      {differs ? (
+        <p className="banner warn" role="status" data-testid="rules-differ">
+          <span>Pravila u ovom poslu se razlikuju od trenutnih podešavanja.</span>
+          <button type="button" className="btn small" data-testid="rules-apply" onClick={() => setState((s) => withCurrentRules(s, settings))}>
+            Primeni trenutna podešavanja na ovaj posao
+          </button>
+        </p>
+      ) : (
+        <p className="muted small" data-testid="rules-same">Pravila u poslu odgovaraju trenutnim podešavanjima.</p>
+      )}
+    </section>
+  );
 }
 
 export function SourceTab({ file, state, derived, setState }: TabProps) {
@@ -144,6 +185,7 @@ export function SourceTab({ file, state, derived, setState }: TabProps) {
   const m = derived.mapping;
   return (
     <div className="source">
+      <RulesNotice state={state} setState={setState} />
       <div className="toolbar">
         {file.kind === 'csv' && src.encoding && src.delimiter && (
           <>
@@ -180,7 +222,7 @@ export function SourceTab({ file, state, derived, setState }: TabProps) {
       {derived.conv?.headerless && <p className="muted">Nema zaglavlja: uzet je podrazumevani raspored kolona.</p>}
       {m && !derived.conv?.headerless && (
         <fieldset className="group mapping" data-testid="mapping">
-          <legend>Mapiranje kolona{state.mapping !== 'auto' && <> <button type="button" className="btn small" onClick={() => setState(withAutoMapping)}>Vrati automatsko</button></>}</legend>
+          <legend>Mapiranje kolona{state.mappingFromMemory && <span className="muted tag" data-testid="mapping-memory" title="Preuzeto iz pamćenja pri uvozu"> iz pamćenja </span>}{state.mapping !== 'auto' && <> <button type="button" className="btn small" onClick={() => setState(withAutoMapping)}>Vrati automatsko</button></>}</legend>
           <div className="mapping-grid">
             {FIELDS.map((f) => {
               const required = REQUIRED_FIELDS.includes(f);

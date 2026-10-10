@@ -18,6 +18,7 @@ import type {
   OutputExportState,
   OutputInfo,
 } from '../../shared/jobs';
+import { applyMemoryUpdate } from './memory';
 import { transaction } from './tx';
 import { searchPatterns, searchText } from './search';
 
@@ -201,6 +202,15 @@ export function saveJob(db: DatabaseSync, id: number, save: JobSave, now = Date.
     const exports = refreshExportStatus(db, id);
     rebuildSearch(db, id);
     return { ...exports, updatedAt: now };
+  });
+}
+
+/** Čuvanje posla i upis ručno promenjenih izbora u pamćenje u istoj transakciji: ili oba ili nijedno. */
+export function saveJobRemembering(db: DatabaseSync, id: number, save: JobSave, now = Date.now()): JobSavedResult {
+  return transaction(db, () => {
+    const res = saveJob(db, id, save, now);
+    if (save.remember) applyMemoryUpdate(db, save.remember, now);
+    return res;
   });
 }
 

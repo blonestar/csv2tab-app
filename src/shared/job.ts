@@ -2,7 +2,7 @@
 // Baza čuva tačno `bajtovi izvora + JobState` (jobs.state, proverava ga parseJobState u src/shared/jobStateCheck.ts);
 // zapisi se ponovo računaju iz toga funkcijom `deriveJob` (src/renderer/job/derive.ts). Ništa što utiče na izlaz ne sme da živi van ovog objekta.
 import type { InputEncoding } from '@core/encoding';
-import type { ColumnMapping } from '@core/parts';
+import type { ColumnMapping, EdgeRule } from '@core/parts';
 
 export type SourceKind = 'csv' | 'ods' | 'xlsx' | 'tab';
 
@@ -31,11 +31,23 @@ export interface MaterialChoice {
   grain?: 0 | 1;
   /** Ime izlaznog fajla (bez .tab); odsutno = predlog. */
   fileName?: string;
+  /** Polja koja su pri pravljenju posla preuzeta iz pamćenja izbora (ne ručno u ovom poslu); ručna izmena polja ga uklanja. */
+  fromMemory?: MemoryField[];
 }
 
-/** Novo polje ili promena značenja = nova verzija i prelaz sa stare; parseJobState zna samo verzije koje poznaje. */
+export const MEMORY_FIELDS = ['wt', 'band', 'grain'] as const;
+export type MemoryField = (typeof MEMORY_FIELDS)[number];
+
+/**
+ * Novo polje ili promena značenja = nova verzija i prelaz sa stare (`upgradeJobStateV1` u jobStateCheck.ts);
+ * parseJobState zna samo verzije koje poznaje.
+ *
+ * Verzija 2 (faza 5): sve što utiče na izlaz posla je u stanju. Tabela šifara kantovanja i pravilo za jednobojne
+ * dekore su SNIMAK iz trenutka pravljenja posla (ili poslednje primene podešavanja), pa kasnija promena podešavanja
+ * ne menja stari posao; isto važi za izbore preuzete iz pamćenja (`fromMemory`) i mapiranje iz pamćenja.
+ */
 export interface JobState {
-  version: 1;
+  version: 2;
   /** Kodiranje CSV-a; 'auto' = prepoznato. */
   encoding: 'auto' | InputEncoding;
   /** Separator CSV-a; 'auto' = prepoznat. */
@@ -50,6 +62,12 @@ export interface JobState {
   materials: Record<string, MaterialChoice>;
   /** Ključ je `PartRecord.key`. */
   edits: Record<string, PartEdit>;
+  /** Snimak tabele šifara kantovanja (jezgro: `EdgeRule`). */
+  edgeRules: EdgeRule[];
+  /** Snimak pravila: materijal imenovan kao „U" + cifre (jednobojni dekor) podrazumevano ne prati teksturu. false = prate svi. */
+  decorRule: boolean;
+  /** `mapping` je preuzet iz pamćenja mapiranja kolona, ne izabran ručno u ovom poslu. */
+  mappingFromMemory: boolean;
 }
 
 /** Fajl onako kako ga renderer dobija (dijalog, prevlačenje). Putanje nema. */

@@ -5,8 +5,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { WtCatalog } from '@core/catalog';
 import type { JobState, OpenedFile } from '../shared/job';
 import type { JobDetail, JobExports, JobListItem } from '../shared/jobs';
-import { EDGE_RULES, newJobState } from './job/defaults';
+import { defaultsFromSettings, newJobState } from './job/defaults';
 import { deriveJob, type DeriveCache, type DerivedJob, type SourceFile } from './job/derive';
+import { rememberDiff, stateForNewJob } from './job/memory';
 import { buildSave, sha256Hex } from './job/save';
 
 export type TabId = 'parts' | 'materials' | 'source' | 'exports';
@@ -106,7 +107,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const derive = useCallback((file: SourceFile, state: JobState, cat: WtCatalog): DerivedJob => {
     const l = last.current;
     if (l && l.file === file && l.state === state && l.catalog === cat) return l.value;
-    const value = deriveJob(file, state, cat, EDGE_RULES, cache.current);
+    const value = deriveJob(file, state, cat, cache.current);
     last.current = { file, state, catalog: cat, value };
     return value;
   }, []);
@@ -124,7 +125,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const { state, jobId, id } = s;
     setPhase({ kind: 'saving' });
     try {
-      const res = await window.api.jobs.save(jobId, buildSave(state, derive(s.file, state, cat)));
+      const derivedNow = derive(s.file, state, cat);
+      // ručne promene izbora od poslednjeg uspešnog čuvanja idu u pamćenje u istoj transakciji
+      const remember = rememberDiff(savedRef.current ?? state, state, derivedNow);
+      const res = await window.api.jobs.save(jobId, { ...buildSave(state, derivedNow), ...(remember ? { remember } : {}) });
       if (sessionRef.current?.id === id) {
         savedRef.current = state;
         mutate((cur) => (cur && cur.id === id ? { ...cur, exports: res } : cur));
@@ -219,8 +223,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (!(await leave(force))) return 'blocked';
       const cat = catalogRef.current;
       if (!cat) throw new Error('Katalog nije učitan.');
-      const state = newJobState();
-      const derivedNew = deriveJob(file, state, cat, EDGE_RULES);
+      // Podešavanja i zapamćeni izbori se kopiraju u stanje pre prvog čuvanja (posao ostaje ponovljiv); ako pamćenje
+      // ne odgovori, uvoz ide dalje sa predlozima.
+      const settings = await window.api.settings.all();
+      const { state, derived: derivedNew } = await stateForNewJob(file, defaultsFromSettings(settings), cat, (q) =>
+        window.api.memory.lookup(q).catch(() => ({ materials: {}, mapping: null })),
+      );
       const created = await window.api.jobs.create(file, buildSave(state, derivedNew));
       begin({
         jobId: created.id,

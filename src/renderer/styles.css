@@ -289,8 +289,8 @@ tr.row-edited td.rn { color: var(--accent); font-weight: 600; }
 .materials-table col.c-band { width: 15%; }
 .materials-table col.c-grain { width: 128px; }
 .materials-table select { width: 100%; }
-.picker { position: relative; display: flex; align-items: center; gap: 4px; min-width: 0; }
-.picker input { flex: 1; min-width: 0; }
+.picker { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.picker input { flex: 1 1 100%; min-width: 0; }
 .picker-list {
   position: absolute;
   top: 100%;
@@ -388,3 +388,22 @@ td.edit.edited input, td.edit.edited select { background: var(--edit); }
 .dialog-text p { margin: 0; }
 .exports h2:first-child { margin-top: 0; }
 .exports-history td { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- podešavanja ---------- */
+.settings-page { max-width: 980px; }
+.settings-panel { padding-top: 12px; }
+.settings-panel h2:first-child { margin-top: 0; }
+.folder-row .folder-label { min-width: 90px; color: var(--muted); }
+.folder-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.edge-table { width: auto; }
+.edge-table input[type='text'] { width: 90px; }
+.edge-table input[type='number'] { width: 70px; }
+.edge-table td { padding: 2px 12px 2px 0; }
+.memory-table td { max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.memory-table td.wrap { white-space: normal; overflow-wrap: anywhere; }
+.banner.warn { border-color: var(--warn); }
+.tag { margin-left: 6px; font-size: 0.8em; }
+.rules-box { margin: 0 0 12px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.rules-box h2 { margin-top: 4px; }
+.rules-box ul { margin: 4px 0; padding-left: 20px; }

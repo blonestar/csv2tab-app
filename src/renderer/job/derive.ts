@@ -12,7 +12,6 @@ import {
   partsFromTab,
   type ColumnMapping,
   type ConvertResult,
-  type EdgeRule,
   type Field,
   type Issue,
   type PartRecord,
@@ -150,18 +149,25 @@ export function resolveWt(catalog: WtCatalog, state: Pick<JobState, 'materials'>
   return { wt: material === '' ? undefined : matchMaterial(catalog, material), auto: true };
 }
 
-function grainOf(catalog: WtCatalog, state: Pick<JobState, 'materials'>, material: string): { grain: 0 | 1; from: MaterialView['grainFrom'] } {
+/** Podrazumevani smer vlakna po nazivu: jezgrov `defaultGrain` dok važi pravilo za jednobojne dekore, inače svi prate teksturu. */
+export function nameGrain(state: Pick<JobState, 'decorRule'>, material: string): 0 | 1 {
+  return state.decorRule ? defaultGrain(material) : 1;
+}
+
+function grainOf(catalog: WtCatalog, state: Pick<JobState, 'materials' | 'decorRule'>, material: string): { grain: 0 | 1; from: MaterialView['grainFrom'] } {
   const c = choiceOf(state, material);
   if (c.grain !== undefined) return { grain: c.grain, from: 'manual' };
+  if (!state.decorRule) return { grain: 1, from: 'default' };
   const { wt } = resolveWt(catalog, state, material);
   if (wt) return { grain: wt.grain ? 1 : 0, from: 'catalog' };
-  return { grain: defaultGrain(material), from: 'default' };
+  return { grain: nameGrain(state, material), from: 'default' };
 }
 
 const baseName = (n: string) => n.replace(/\.[^.]+$/, '');
 
 // ---------- izvođenje ----------
-export function deriveJob(file: SourceFile, state: JobState, catalog: WtCatalog, rules: readonly EdgeRule[], cache?: DeriveCache): DerivedJob {
+export function deriveJob(file: SourceFile, state: JobState, catalog: WtCatalog, cache?: DeriveCache): DerivedJob {
+  const rules = state.edgeRules;
   const source = memo(cache, 'parse', [file.bytes, file.kind, state.encoding, state.delimiter, state.sheet], () => parseSource(file, state));
   const issues: Issue[] = [];
   if (source.error) issues.push({ level: 'error', msg: source.error });
@@ -177,9 +183,10 @@ export function deriveJob(file: SourceFile, state: JobState, catalog: WtCatalog,
     const plain = memo(cache, 'convPlain', [source, mapping, state.merge, rules], () =>
       convertRows(source.rows, { rules, merge: state.merge }, mapping),
     );
-    // Smer vlakna po materijalu zavisi od izabranog WT materijala, a spisak materijala se zna tek posle prve
-    // konverzije; druga se radi samo ako se neki smer razlikuje od podrazumevanog.
-    const grain: Record<string, 0 | 1> = {};
+    // Smer vlakna po materijalu zavisi od izabranog WT materijala (i od pravila za jednobojne dekore), a spisak
+    // materijala se zna tek posle prve konverzije (koja koristi jezgrov defaultGrain); druga se radi samo ako se
+    // neki smer razlikuje od njega.
+    const grain: Record<string, 0 | 1> = Object.create(null) as Record<string, 0 | 1>;
     for (const m of plain.materials) grain[m] = grainOf(catalog, state, m).grain;
     const differs = plain.materials.some((m) => grain[m] !== defaultGrain(m));
     const grainKey = JSON.stringify(grain);

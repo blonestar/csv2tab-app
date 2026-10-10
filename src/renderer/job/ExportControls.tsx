@@ -5,6 +5,7 @@ import { readWtTab, type WtPart } from '@core/wtTab';
 import { DiffSummary, DiffTable } from '../components/DiffTable';
 import { useSession } from '../session';
 import { exportFiles, type DerivedJob, type ExportFile } from './derive';
+import { confirmedByExport } from './memory';
 
 interface Pending {
   files: ExportFile[];
@@ -69,6 +70,22 @@ export function ExportControls({ derived }: { derived: DerivedJob }) {
       return;
     }
     if (res.job) applyExports(res.job);
+    // upisan (ili već isti) fajl potvrđuje izbore za svoj materijal; pamćenje je pomoćno i ne sme da pokvari izvoz
+    if (session && session.jobId !== null) {
+      const done = new Set<string>();
+      res.items.forEach((it, i) => {
+        if (it.status === 'written' || it.status === 'identical') done.add(files[i].material);
+      });
+      const update = confirmedByExport(derived, done);
+      if (update) {
+        try {
+          await window.api.memory.remember(update);
+        } catch (e) {
+          setBanner({ kind: 'error', text: `Fajlovi su izvezeni, ali izbori nisu zapamćeni: ${errText(e)}` });
+          return;
+        }
+      }
+    }
     const bad = res.items.filter((it) => it.status === 'error' || it.status === 'skipped');
     const written = res.items.filter((it) => it.status === 'written').length;
     const same = res.items.filter((it) => it.status === 'identical').length;

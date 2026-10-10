@@ -21,10 +21,12 @@ export function filesOperations(ctx: IpcContext) {
         return [key as FolderSettingKey];
       },
       async run(key) {
+        const db = ctx.db.sqlite;
         const folder = await pickFolder(ctx.testMode);
         if (!folder) return null;
         if (!(await stat(folder)).isDirectory()) throw new Error('Izabrana putanja nije folder.');
-        return setSetting(ctx.db.sqlite, key, folder);
+        if (db !== ctx.db.sqlite || ctx.lock.restoring) throw new Error('Baza je promenjena; izaberite folder ponovo.');
+        return setSetting(db, key, folder);
       },
     } satisfies Operation<'files.chooseFolder'>,
   };

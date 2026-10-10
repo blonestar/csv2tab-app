@@ -5,10 +5,10 @@ binarni WT Input `.tab`. Nastala je iz web aplikacije [csv2tab](https://github.c
 jezgro konverzije, ali ima **svoj interfejs i svoju bazu**. Ovaj dokument je plan cele aplikacije. Pravila rada za
 agente su u `AGENTS.md`.
 
-Stanje: **faze 1 (osnova), 2 (baza), 3 (uvoz, pregled, izvoz) i 4 (poslovi) su gotove**: uvoz fajla (dijalog i
-prevlačenje) odmah pravi posao u bazi, izmene se čuvaju same, lista poslova ima pretragu i oznaku „menjano posle
-izvoza“, posao se otvara i izvozi bez originalnog fajla, izvozi (sa tačnim bajtovima) su u bazi. Pamćenje izbora
-(materijal, kolone) i stranica podešavanja stižu u fazi 5. `node:sqlite` na Windowsu nije proveren. Kad se faza završi, označi je u odeljku [Faze](#faze).
+Stanje: **faze 0–5 su gotove**. Uvoz pravi posao u bazi, izmene se čuvaju same, a posao se otvara i izvozi bez
+originalnog fajla. Novi poslovi preuzimaju zapamćene izbore materijala i kolona i snimak pravila iz podešavanja.
+Podešavanja imaju tabelu kantovanja, pravilo za jednobojne dekore, spajanje, foldere, temu i rezervnu kopiju sa
+vraćanjem. Provere su na Linuxu; `node:sqlite` na Windowsu nije proveren.
 
 ## Cilj
 
@@ -155,7 +155,7 @@ stavlja na mrežni disk.
 
 | Tabela | Kolone |
 | --- | --- |
-| `settings` | `key` (PK), `value` (JSON). Ključevi su zatvoren skup u `src/shared/settings.ts` (`theme`: `system` / `light` / `dark`; `wtFolder`: putanja, prazno = nije zadat), svaki sa tipom i proverom. Nema ključa u bazi = podrazumevana vrednost. Folder-ključevi (`folder: true` u definiciji) se ne upisuju kroz `settings.set`, nego samo izborom u dijalogu (`files.chooseFolder`); faza 5 dodaje folder za rezervne kopije istim putem. |
+| `settings` | `key` (PK), `value` (JSON). Zatvoren skup u `src/shared/settings.ts`: `theme`, `wtFolder`, `backupFolder`, `edgeRules`, `decorRule`, `mergeDefault`, svaki sa strogom proverom. Nema ključa = podrazumevana vrednost. Folderi se upisuju samo izborom kroz `files.chooseFolder`; ostalo odmah kroz `settings.set`. |
 | `materials` | `id` (PK), `source` (`builtin` / `user`), `code`, `name`, `sheet_w`, `sheet_h`, `thickness`, `grain` (0/1), `position` (redosled iz kataloga). `code` je jedinstven među `builtin` redovima (parcijalni indeks); korisnikov red sme da ima istu šifru. |
 | `edge_bands` | `id` (PK), `source`, `code`, `name`, `position`; ista pravila kao za materijale. |
 | `meta` | `key` (PK), `value`: unutrašnji podaci (`catalog_hash`). Ne izlaže se rendereru. |
@@ -168,12 +168,28 @@ stavlja na mrežni disk.
 | `job_parts` | konačni zapisi posla po materijalu, posle ručnih izmena: `job_id` → `jobs` (`ON DELETE CASCADE`), `position`, `material` (naziv iz fajla), `wt_code` (šifra WT materijala, `''` = nijedan; nije `materials.id`), `dim1`, `dim2`, `edge1`, `edge2`, `grain`, `qty`, `name`. PK `(job_id, position)`. Zamenjuju se pri svakom čuvanju, u istoj transakciji kao `state`. |
 | `exports` | `id` (PK), `job_id` → `jobs` (`ON DELETE CASCADE`), `material`, `file_name`, `folder`, `exported_at`, `record_count`, `size`, `sha256`, `result` (`written` / `identical` = u folderu je već bio bajt-identičan fajl), `bytes` (BLOB: tačno upisano). Nastaje samo za upisane i bajt-identične fajlove, nikad za preskočene ili neuspele. |
 
-Tabele ispod su još nacrt; svaka stiže kao **nova migracija** u fazi koja je koristi, kad se zna njen stvarni oblik:
+**Migracija `0003_pamcenje.sql` (faza 5)**, vremena su milisekunde (UTC); obe tabele su `STRICT, WITHOUT ROWID`:
 
-| Tabela | Sadržaj |
+| Tabela | Kolone |
 | --- | --- |
-| `material_map` | naziv materijala iz CSV-a → WT materijal, traka, „Prati teksturu" |
-| `column_maps` | potpis zaglavlja → mapiranje kolona |
+| `material_map` | `name` (PK: NFC, trim, jedan razmak između reči, mala slova; dijakritici ostaju), `label` (poslednji prikazani naziv), `wt_code` (šifra, nije `materials.id`; `''` = izričito nijedan), `band` (šifra trake; `''` = bez trake), `grain` (0/1), `updated_at`. `NULL` u svakom polju znači da ono nije zapamćeno. |
+| `column_maps` | `signature` (PK: zaglavlje svedeno jezgrovim `normHeader`, bez praznih ćelija na kraju, spojeno U+001F), `mapping` (JSON `ColumnMapping`: indeksi, -1 = nema), `updated_at`. Bez zaglavlja nema potpisa. |
+
+- **Ponovljivost i pamćenje.** Novi posao u `JobState` verzije 2 kopira zapamćene izbore i mapiranje, tabelu
+  `edgeRules` i `decorRule`, uz početni `merge`. Kasnija promena podešavanja ili pamćenja utiče samo na nove
+  poslove. Kartica Izvor pokazuje razliku pravila i nudi „Primeni trenutna podešavanja“ kao običnu izmenu posla
+  koja se automatski čuva. Materijali pokazuju poreklo svakog izbora: pamćenje, predlog iz kataloga ili ručno.
+  Verzija 1 se nadograđuje čistom funkcijom pri čitanju (`DEFAULT_EDGE_RULES`, uključeno pravilo za dekore),
+  bez SQL prepisivanja poslova; testovi porede stare referentne heševe izlaza.
+- **Kada se pamti.** Ručna izmena materijala ili mapiranja se upisuje u istoj transakciji sa poslom. Uspešan
+  izvoz potvrđuje sve važeće izbore izvezenih materijala, uključujući predloge, smer po pravilu i „nijedan“.
+  Ručno ime izlaznog fajla se ne pamti. Podešavanja nude pregled i brisanje zapamćenih stavki.
+- **Nepodoban izbor.** Šifra WT materijala ili trake koje više nema u katalogu preskače se pri novom uvozu
+  (ostaje u tabeli za pregled/brisanje); koristi se predlog iz kataloga. Mapiranje sa indeksom van novih kolona
+  ili bez obavezne kolone se preskače i koristi se automatsko. Ključ materijala je naziv, bez debljine: isti
+  naziv sa drugom debljinom preuzima isti izbor. Debljina WT materijala i predlog imena dolaze iz izabranog
+  reda kataloga; druga debljina u fajlu ne bira novu šifru. Ako treba drugi WT materijal, bira se ručno i taj
+  izbor važi za sledeće uvoze istog naziva.
 
 - **Čuvanje posla.** Uvoz odmah poziva `jobs.create` (izvorni bajtovi, početno stanje, zapisi, izlazni fajlovi); svaka
   izmena stanja ide kroz `jobs.save` (stanje, zapisi, izlazni fajlovi; izvor se ne dira). Renderer šalje i izlazne
@@ -209,10 +225,11 @@ Tabele ispod su još nacrt; svaka stiže kao **nova migracija** u fazi koja je k
 - **Stanje posla (`JobState`, faza 3).** Tip je u `src/shared/job.ts`, običan JSON bez `Map`/`Set`/`Uint8Array`:
   kodiranje, separator, list, mapiranje (`'auto'` ili izbor), spajanje, izbor po materijalu (`MaterialChoice`: WT
   materijal, traka, „Prati teksturu", ime fajla; odsutno polje = predlog) i ručne izmene po ključu zapisa. Sve izvedeno
-  računa čista funkcija `deriveJob(file, state, catalog, rules, cache?)` u `src/renderer/job/derive.ts`; prelazi stanja
+  računa čista funkcija `deriveJob(file, state, catalog, cache?)` u `src/renderer/job/derive.ts`; prelazi stanja
   (promena izvora briše izmene) su u `src/renderer/job/state.ts`. Posao u bazi čuva `bajtovi izvora + JobState`, a
-  `deriveJob` se poziva pri otvaranju; interfejs ne sme da drži nijednu odluku van `JobState`. Podrazumevana pravila kantovanja i
-  spajanje dolaze iz `src/renderer/job/defaults.ts` (faza 5 ih menja sačuvanim vrednostima).
+  `deriveJob` se poziva pri otvaranju; interfejs ne sme da drži nijednu odluku van `JobState`. Početna pravila i
+  spajanje dolaze iz podešavanja preko `src/renderer/job/defaults.ts`. Isključeno pravilo za dekore postavlja
+  smer kroz `grainByMaterial`, bez promene jezgrovog `defaultGrain`; izričit izbor po materijalu ima prednost.
 - **Posao čuva ulaz i odluke, ne samo rezultat.** `jobs.state` nosi ono što web drži u `FileEntry`: kodiranje,
   separator, list, mapiranje kolona, spajanje, izbor po materijalu, ime fajla i ručne izmene. Pri otvaranju se zapisi
   ponovo računaju jezgrom iz sačuvanih bajtova izvornog fajla. Fajlovi su mali (KB do nekoliko MB), pa stoje u bazi.
@@ -233,7 +250,11 @@ Tabele ispod su još nacrt; svaka stiže kao **nova migracija** u fazi koja je k
   a čita se samo `fs`-om, što radi i unutar asara.
 - **Tema.** Čuva se u bazi, a primenjuje je glavni proces preko `nativeTheme.themeSource` pre otvaranja prozora, pa
   CSS (`prefers-color-scheme`) prati izbor bez skripte i bez treperenja pri pokretanju.
-- **Rezervna kopija.** Ručno iz podešavanja u izabrani folder, plus vraćanje iz kopije.
+- **Rezervna kopija.** Posle čuvanja otvorenog posla `VACUUM INTO` pravi samostalan fajl sa vremenom u imenu.
+  Vraćanje bira fajl u glavnom procesu, pravi privremenu kopiju i proverava `integrity_check`, očekivane tabele
+  i kolone, veze i `user_version`. Prikazuje broj poslova i datum najnovijeg i traži potvrdu. Starija kopija se
+  migrira pre zamene. Zatim se trenutna baza zatvara uz checkpoint, uklanjaju stari WAL/SHM, a prethodna baza
+  ostaje kao sigurnosna kopija pored nove. Prozor se ponovo učitava. Odustajanje ili neuspeh čuva trenutnu bazu.
 
 ## Verzije
 
@@ -252,7 +273,7 @@ Tabele ispod su još nacrt; svaka stiže kao **nova migracija** u fazi koja je k
 - Ikonice se generišu iz logoa web aplikacije (`.ico` za Windows, PNG skup za Linux).
 - Electron je u `devDependencies`; u paket ulaze izgrađeni `main`, `preload`, `renderer` i `migrations` (`asar`).
 - CI: GitHub Actions, matrica `windows-latest` + `ubuntu-latest`, pokreće se na tag `v*`, gradi pakete i kači ih na
-  GitHub Release. Submodul je privatan repo, pa checkout traži deploy ključ ili token sa pristupom repou `csv2tab`.
+  GitHub Release. Po odluci korisnika oba repoa su javna, pa submodul ne traži poseban ključ ili token.
 
 ## Faze
 
@@ -283,9 +304,9 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
       **Otvoreno:** nema poređenja sa sačuvanim izvozom u interfejsu (bajtovi su u bazi); nema izmene imena fajla ni
       ponovnog uvoza istog posla sa novog mesta; posao ne pamti u kom WT folderu je poslednji put izvezen osim kroz
       istoriju izvoza.
-- [ ] **5. Pamćenje izbora i podešavanja**: `material_map`, `column_maps`, stranica podešavanja (folderi, tabela
+- [x] **5. Pamćenje izbora i podešavanja**: `material_map`, `column_maps`, stranica podešavanja (folderi, tabela
       kantova, pravila, tema), rezervna kopija i vraćanje. *Gotovo kad:* drugi uvoz fajla sa istim materijalima ne
-      traži nijedan ručni izbor.
+      traži nijedan ručni izbor. Provereno smoke testom na Linuxu, uključujući snimak pravila i vraćanje kopije.
 - [ ] **6. Desktop integracija**: meni i prečice, jedna instanca, otvaranje fajlova iz argumenata i druge instance,
       pamćenje veličine i položaja prozora.
 - [ ] **7. Pakovanje**: electron-builder, ikonice, asocijacije fajlova. *Gotovo kad:* AppImage radi na Fedori, a
@@ -312,7 +333,8 @@ Kasnije, redosled nije utvrđen:
   privremeni folder, uporedi bajtove sa referentnim `.tab`, ponovo pokreni i proveri da posao postoji. Test čeka na uslove
   na stranici (indikator čuvanja, `data-loaded` liste), nikad na fiksno vreme; uvozi iz privremene kopije fajla koju briše
   pre restarta; menja bazu samo dok je aplikacija zatvorena (neispravno stanje). Dijalozi se u
-  testu zaobilaze promenljivama okruženja `CSV2TAB_TEST_IMPORT`, `CSV2TAB_TEST_COMPARE`, `CSV2TAB_TEST_FOLDER` i `CSV2TAB_TEST_FAIL_SAVE` (svako čuvanje posla pada) koje
+  testu zaobilaze promenljivama okruženja `CSV2TAB_TEST_IMPORT`, `CSV2TAB_TEST_COMPARE`, `CSV2TAB_TEST_FOLDER`,
+  `CSV2TAB_TEST_RESTORE` i `CSV2TAB_TEST_FAIL_SAVE` (svako čuvanje posla pada) koje
   glavni proces čita pri svakom pozivu, ali samo uz `CSV2TAB_TEST=1` i nikad u spakovanoj aplikaciji
   (`src/main/testHooks.ts`).
 - Ručna provera na Windowsu pre svakog izdanja: instalacija preko prethodne verzije, otvaranje fajla sa dijakritikom
@@ -322,7 +344,7 @@ Kasnije, redosled nije utvrđen:
 
 - **Potpisivanje za Windows.** Bez sertifikata SmartScreen pri prvoj instalaciji prikazuje „Unknown publisher".
   Pretpostavka dok se ne odluči drugačije: bez potpisa.
-- **Ažuriranje.** Repo je privatan, pa `electron-updater` ne može da čita GitHub Releases bez tokena.
+- **Ažuriranje.** Oba repoa su javna; automatsko ažuriranje i dalje nije uvedeno.
   Pretpostavka: bez automatskog ažuriranja; kasnija faza samo proverava javni JSON sa poslednjom verzijom i nudi
   link. Gde stoji taj JSON i instalacije (javni repo samo za izdanja, Vercel, nešto treće) nije odlučeno.
 - **Linux paketi.** Pretpostavka: samo AppImage. `.rpm` na zahtev.

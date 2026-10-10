@@ -32,6 +32,19 @@ const api: Api = {
     delete: (id) => ipcRenderer.invoke('jobs.delete', id),
     exports: (id) => ipcRenderer.invoke('jobs.exports', id),
   },
+  memory: {
+    lookup: (query) => ipcRenderer.invoke('memory.lookup', query),
+    remember: (update) => ipcRenderer.invoke('memory.remember', update),
+    list: () => ipcRenderer.invoke('memory.list'),
+    forget: (kind, key) => ipcRenderer.invoke('memory.forget', kind, key),
+  },
+  backup: {
+    create: () => ipcRenderer.invoke('backup.create'),
+    inspect: () => ipcRenderer.invoke('backup.inspect'),
+    restore: (token) => ipcRenderer.invoke('backup.restore', token),
+    cancel: (token) => ipcRenderer.invoke('backup.cancel', token),
+    finish: () => ipcRenderer.invoke('backup.finish'),
+  },
   lifecycle: {
     onFlushRequest(handler) {
       const listener = () => {

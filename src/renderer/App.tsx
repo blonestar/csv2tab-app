@@ -4,6 +4,7 @@ import { Catalog } from './pages/Catalog';
 import { Jobs } from './pages/Jobs';
 import { Settings } from './pages/Settings';
 import { SessionProvider } from './session';
+import { SettingsProvider } from './settings';
 
 const PAGES = [
   { id: 'jobs', label: 'Poslovi', view: Jobs },
@@ -18,6 +19,7 @@ export function App() {
   const [page, setPage] = useState<PageId>('jobs');
   const View = PAGES.find((p) => p.id === page)!.view;
   return (
+    <SettingsProvider>
     <SessionProvider>
       <div className="shell">
         <nav className="sidebar" aria-label="Glavni meni">
@@ -38,5 +40,6 @@ export function App() {
         </main>
       </div>
     </SessionProvider>
+    </SettingsProvider>
   );
 }

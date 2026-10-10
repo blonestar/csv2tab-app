@@ -9,6 +9,7 @@ import { resolveAppPath } from './appPath';
 import { CSP_BUILT, cspDev } from './csp';
 import catalog from '../../web/src/data/wt-catalog.json' with { type: 'json' };
 import type { WtCatalog } from '@core/catalog';
+import { discardStaged } from './db/backup';
 import { DatabaseTooNewError, openDatabase, type AppDatabase } from './db';
 import { getSetting } from './db/settings';
 import { registerIpc } from './ipc';
@@ -96,6 +97,7 @@ function createWindow(hash = '', title = 'csv2tab'): BrowserWindow {
 }
 
 let database: AppDatabase | undefined;
+let mainWindow: BrowserWindow | undefined;
 const compares = new Map<string, ComparePayload>();
 
 const windows = {
@@ -106,6 +108,12 @@ const windows = {
     win.on('closed', () => compares.delete(id));
   },
   getCompare: (id: string) => compares.get(id),
+  flushMain: () => (mainWindow && !mainWindow.isDestroyed() ? requestFlush(mainWindow) : Promise.resolve(true)),
+  reloadAfterRestore(): void {
+    // prozori poređenja nose podatke iz stare baze; glavni prozor se učitava ispočetka nad novom
+    for (const w of BrowserWindow.getAllWindows()) if (w !== mainWindow) w.close();
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.reload();
+  },
   flushed(ok: boolean): void {
     pendingFlush?.(ok);
   },
@@ -137,6 +145,7 @@ function applySetting(key: string, value: unknown): void {
 
 function openMainWindow(): void {
   const win = createWindow();
+  mainWindow = win;
   let flushed = false;
   let flushing = false;
   win.on('close', (e) => {
@@ -169,13 +178,15 @@ function openMainWindow(): void {
   });
 }
 
+const dbOptions = () => ({
+  file: join(app.getPath('userData'), 'csv2tab.db'),
+  migrationsDir: MIGRATIONS,
+  catalog: catalog as unknown as WtCatalog,
+});
+
 function openDb(): AppDatabase | undefined {
   try {
-    return openDatabase({
-      file: join(app.getPath('userData'), 'csv2tab.db'),
-      migrationsDir: MIGRATIONS,
-      catalog: catalog as unknown as WtCatalog,
-    });
+    return openDatabase(dbOptions());
   } catch (e) {
     if (e instanceof DatabaseTooNewError) {
       dialog.showErrorBox(
@@ -196,6 +207,7 @@ app.whenReady().then(() => {
     app.exit(1);
     return;
   }
+  discardStaged(`${database.file}.restore-tmp`); // privremena kopija od prekinutog vraćanja
   applySetting('theme', getSetting(database.sqlite, 'theme'));
   if (devUrl) {
     // Samo razvoj: Vite servira stranicu sa http://, pa CSP zadaje main.
@@ -206,7 +218,7 @@ app.whenReady().then(() => {
   } else {
     serveApp();
   }
-  registerIpc({ devUrl, testMode, db: database, applySetting, windows });
+  registerIpc({ devUrl, testMode, db: database, dbOptions: dbOptions(), lock: { restoring: false }, applySetting, windows });
   openMainWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) openMainWindow();
@@ -220,6 +232,7 @@ app.on('window-all-closed', () => {
 
 // Čisto zatvaranje baze (checkpoint WAL-a), da restart i rezervna kopija vide celovit fajl.
 app.on('will-quit', () => {
+  if (database) discardStaged(`${database.file}.restore-tmp`);
   database?.close();
   database = undefined;
 });

@@ -2,10 +2,12 @@
 import { useId, useState } from 'react';
 import { materialLabel, searchMaterials, type WtCatalog, type WtMaterial } from '@core/catalog';
 
-export function MaterialPicker({ catalog, value, auto, onPick, label }: {
+export function MaterialPicker({ catalog, value, auto, memory, onPick, label }: {
   catalog: WtCatalog;
   value: WtMaterial | undefined;
   auto: boolean;
+  /** Izbor je preuzet iz pamćenja (ne ručno u ovom poslu). */
+  memory?: boolean;
   /** string = šifra, null = nijedan, undefined = vrati automatski predlog */
   onPick: (code: string | null | undefined) => void;
   label: string;
@@ -24,6 +26,7 @@ export function MaterialPicker({ catalog, value, auto, onPick, label }: {
         aria-label={label}
         data-testid="wt-material"
         placeholder="šifra ili naziv iz kataloga…"
+        title={value ? materialLabel(value) : undefined}
         autoComplete="off"
         value={query ?? (value ? materialLabel(value) : '')}
         onFocus={(e) => e.currentTarget.select()}
@@ -37,8 +40,11 @@ export function MaterialPicker({ catalog, value, auto, onPick, label }: {
           }
         }}
       />
-      {auto && value && <span className="muted tag" title="Predlog po šifri iz fajla">predlog</span>}
-      {value && (
+      {auto && value && <span className="muted tag" title="Predlog po šifri iz fajla" data-origin="auto">predlog</span>}
+      {auto && !value && <span className="muted tag">nema predloga</span>}
+      {memory && <span className="muted tag" title="Preuzeto iz pamćenja izbora pri uvozu" data-origin="memory">iz pamćenja</span>}
+      {!auto && !memory && <span className="muted tag" title="Izabrano ručno u ovom poslu" data-origin="manual">ručno</span>}
+      {(value || auto) && (
         <button type="button" className="icon" title="Bez WT materijala" aria-label="Ukloni WT materijal" onClick={() => onPick(null)}>×</button>
       )}
       {!auto && (
