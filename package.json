@@ -1,0 +1,12 @@
+{
+  "name": "csv2tab-app",
+  "version": "0.1.0",
+  "private": true,
+  "author": "Bojan",
+  "type": "module",
+  "description": "Desktop verzija csv2tab (Electron, Windows i Linux): CSV / ODS / XLSX krojne liste u WT Input .tab.",
+  "scripts": {
+    "web:install": "npm --prefix web ci",
+    "web:build": "npm --prefix web run build"
+  }
+}
