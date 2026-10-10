@@ -1,6 +1,6 @@
 // Iz bajtova izvora i JobState-a izvodi sve ostalo: redove, kodiranje, mapiranje, zapise sa izmenama, materijale,
 // imena izlaznih fajlova i upozorenja. Čista funkcija: ista ulazna vrednost daje isti izlaz, bez ičega van `state`.
-// Faza 4 čuva `bajtovi + state` i poziva `deriveJob` pri ponovnom otvaranju posla.
+// Posao u bazi čuva `bajtovi + state`; `deriveJob` se poziva pri svakom otvaranju i pri svakom čuvanju (src/renderer/session.tsx).
 import { matchMaterial, safeFileName, suggestFilename, type WtCatalog, type WtMaterial } from '@core/catalog';
 import { DELIMITERS, detectDelimiter, parseCsv } from '@core/csv';
 import { decodeAs, detectEncoding, type InputEncoding } from '@core/encoding';
