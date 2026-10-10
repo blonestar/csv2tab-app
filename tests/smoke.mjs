@@ -128,18 +128,23 @@ try {
   assert.ok((await page.textContent('[data-testid=materials] tbody')).includes('103-ME3'));
   console.log('katalog: prikaz i pretraga rade');
 
-  // tema kroz interfejs: odmah se primenjuje
+  // tema kroz interfejs: odmah se primenjuje. Čuva se tema suprotna sistemskoj, da restart ne prođe slučajno.
   await page.click('nav button:has-text("Podešavanja")');
-  await page.click('label:has-text("Tamna")');
-  await page.waitForFunction(() => matchMedia('(prefers-color-scheme: dark)').matches);
-  const darkBg = await bodyBg(page);
-  assert.equal(await page.evaluate(() => window.api.settings.get('theme')), 'dark');
-  await page.click('label:has-text("Svetla")');
-  await page.waitForFunction(() => !matchMedia('(prefers-color-scheme: dark)').matches);
-  assert.notEqual(await bodyBg(page), darkBg);
-  await page.click('label:has-text("Tamna")');
-  await page.waitForFunction(() => matchMedia('(prefers-color-scheme: dark)').matches);
-  console.log('tema promenjena na tamnu, pozadina:', darkBg);
+  const systemDark = await isDark(page);
+  const [keep, other] = systemDark ? ['light', 'dark'] : ['dark', 'light'];
+  const LABEL = { light: 'Svetla', dark: 'Tamna' };
+  const waitTheme = (p, theme) =>
+    p.waitForFunction((dark) => matchMedia('(prefers-color-scheme: dark)').matches === dark, theme === 'dark');
+  await page.click(`label:has-text("${LABEL[keep]}")`);
+  await waitTheme(page, keep);
+  const keepBg = await bodyBg(page);
+  assert.equal(await page.evaluate(() => window.api.settings.get('theme')), keep);
+  await page.click(`label:has-text("${LABEL[other]}")`);
+  await waitTheme(page, other);
+  assert.notEqual(await bodyBg(page), keepBg);
+  await page.click(`label:has-text("${LABEL[keep]}")`);
+  await waitTheme(page, keep);
+  console.log(`tema promenjena na ${keep} (sistemska je ${systemDark ? 'dark' : 'light'}), pozadina:`, keepBg);
 
   // restart sa istim userData: podešavanje i tema moraju da ostanu
   await app.close();
@@ -147,13 +152,14 @@ try {
   const page2 = await app.firstWindow();
   await page2.waitForURL('app://csv2tab/**', { timeout: 15000 });
   await page2.waitForSelector('nav.sidebar');
-  assert.equal(await page2.evaluate(() => window.api.settings.get('theme')), 'dark');
-  assert.equal(await isDark(page2), true, 'tema nije primenjena posle restarta');
-  assert.equal(await bodyBg(page2), darkBg);
+  assert.equal(await page2.evaluate(() => window.api.settings.get('theme')), keep);
+  assert.equal(await isDark(page2), keep === 'dark', 'tema nije primenjena posle restarta');
+  assert.equal(await bodyBg(page2), keepBg);
   await page2.click('nav button:has-text("Podešavanja")');
-  assert.equal(await page2.isChecked('input[value=dark]'), true);
+  // stranica učitava podešavanje asinhrono, pa se čeka na označeno polje
+  await page2.waitForSelector(`input[value=${keep}]:checked`);
   assert.equal((await page2.evaluate(() => window.api.app.info())).schemaVersion, 1);
-  console.log('posle restarta: tema = dark, primenjena');
+  console.log(`posle restarta: tema = ${keep}, primenjena`);
 
   console.log('SMOKE OK');
 } finally {
