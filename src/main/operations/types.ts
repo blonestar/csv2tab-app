@@ -19,6 +19,8 @@ export interface IpcContext {
   windows: {
     openCompare(payload: ComparePayload): void;
     getCompare(id: string): ComparePayload | undefined;
+    /** Renderer javlja da je sve nesačuvano upisano (ok) ili da nije uspelo. */
+    flushed(ok: boolean): void;
   };
 }
 

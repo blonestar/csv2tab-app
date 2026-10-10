@@ -4,6 +4,7 @@
 import type { WtCatalog } from '@core/catalog';
 import type { WtPart } from '@core/wtTab';
 import type { OpenedFile } from './job';
+import type { JobDetail, JobExports, JobListItem, JobListQuery, JobListResult, JobSave, JobSavedResult } from './jobs';
 import type { FolderSettingKey, SettingKey, SettingValue, SettingsMap } from './settings';
 
 export interface AppInfo {
@@ -29,6 +30,8 @@ export type OpenPurpose = 'import' | 'compare';
 export interface ExportItem {
   name: string;
   bytes: Uint8Array;
+  /** Naziv materijala iz fajla; obavezan kad se izvoz beleži uz posao. */
+  material?: string;
 }
 
 export type ExportFolderProblem = { ok: false; reason: 'no-folder' | 'folder-missing'; folder: string; message: string };
@@ -53,6 +56,10 @@ export type ExportWriteResult =
       ok: true;
       folder: string;
       items: { name: string; status: 'written' | 'identical' | 'skipped' | 'error'; message?: string }[];
+      /** Izvozi posla posle beleženja (samo kad je zadat posao). */
+      job?: JobExports;
+      /** Fajlovi su upisani, ali izvoz nije zabeležen u bazi. */
+      recordError?: string;
     };
 
 /** Podaci za prozor poređenja (a = trenutni zapisi, b = postojeći fajl). */
@@ -61,6 +68,18 @@ export interface ComparePayload {
   bName: string;
   a: WtPart[];
   b: WtPart[];
+}
+
+export interface JobCreated {
+  id: number;
+  name: string;
+  createdAt: number;
+}
+
+/** Izmena imena i/ili napomene posla. */
+export interface JobMeta {
+  name?: string;
+  note?: string;
 }
 
 /** Operacije: ključ je ime IPC kanala, `args` su argumenti koje renderer šalje, `result` je odgovor. */
@@ -73,7 +92,16 @@ export interface IpcOperations {
   'files.open': { args: [purpose: OpenPurpose]; result: OpenedFile | null };
   'files.chooseFolder': { args: [key: FolderSettingKey]; result: string | null };
   'export.check': { args: [items: ExportItem[]]; result: ExportCheck };
-  'export.write': { args: [items: ExportItem[], overwrite: string[]]; result: ExportWriteResult };
+  'export.write': { args: [items: ExportItem[], overwrite: string[], jobId: number | null]; result: ExportWriteResult };
+  'jobs.list': { args: [query: JobListQuery]; result: JobListResult };
+  'jobs.findBySource': { args: [sha256: string]; result: JobListItem[] };
+  'jobs.get': { args: [id: number]; result: JobDetail };
+  'jobs.create': { args: [file: OpenedFile, save: JobSave]; result: JobCreated };
+  'jobs.save': { args: [id: number, save: JobSave]; result: JobSavedResult };
+  'jobs.update': { args: [id: number, meta: JobMeta]; result: JobListItem };
+  'jobs.delete': { args: [id: number]; result: void };
+  'jobs.exports': { args: [id: number]; result: JobExports };
+  'app.flushed': { args: [ok: boolean]; result: void };
   'compare.open': { args: [payload: ComparePayload]; result: void };
   'compare.get': { args: [id: string]; result: ComparePayload };
 }
@@ -104,7 +132,26 @@ export interface Api {
     /** Gde fajlovi već postoje i da li su isti; ništa ne upisuje. */
     check(items: ExportItem[]): Promise<ExportCheck>;
     /** Upisuje u WT folder. Postojeći različit fajl se prepisuje samo ako mu je ime u `overwrite`. */
-    write(items: ExportItem[], overwrite: string[]): Promise<ExportWriteResult>;
+    write(items: ExportItem[], overwrite: string[], jobId: number | null): Promise<ExportWriteResult>;
+  };
+  jobs: {
+    /** Lista sa pretragom i stranicama; zapisi se ne šalju. */
+    list(query: JobListQuery): Promise<JobListResult>;
+    /** Poslovi sa istim izvornim fajlom (SHA-256). */
+    findBySource(sha256: string): Promise<JobListItem[]>;
+    get(id: number): Promise<JobDetail>;
+    /** Novi posao od uvezenog fajla; ime je ime fajla bez ekstenzije. */
+    create(file: OpenedFile, save: JobSave): Promise<JobCreated>;
+    /** Stanje, zapisi i izlazni fajlovi posla; izvorni bajtovi se ne menjaju. */
+    save(id: number, save: JobSave): Promise<JobSavedResult>;
+    update(id: number, meta: JobMeta): Promise<JobListItem>;
+    /** Briše posao i njegove sačuvane izvoze (fajlovi u WT folderu ostaju). */
+    delete(id: number): Promise<void>;
+    exports(id: number): Promise<JobExports>;
+  };
+  lifecycle: {
+    /** Glavni proces traži da se sve nesačuvano upiše pre zatvaranja prozora; poziv vraća funkciju za odjavu. */
+    onFlushRequest(handler: () => Promise<boolean>): () => void;
   };
   compare: {
     /** Otvara poseban prozor poređenja. */

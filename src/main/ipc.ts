@@ -7,6 +7,7 @@ import { catalogOperations } from './operations/catalog';
 import { compareOperations } from './operations/compare';
 import { exportOperations } from './operations/export';
 import { filesOperations } from './operations/files';
+import { jobsOperations } from './operations/jobs';
 import { settingsOperations } from './operations/settings';
 import type { IpcContext, Operation } from './operations/types';
 
@@ -19,6 +20,7 @@ export function registerIpc(ctx: IpcContext): void {
     ...catalogOperations(ctx),
     ...filesOperations(ctx),
     ...exportOperations(ctx),
+    ...jobsOperations(ctx),
     ...compareOperations(ctx),
   };
 

@@ -106,7 +106,28 @@ const windows = {
     win.on('closed', () => compares.delete(id));
   },
   getCompare: (id: string) => compares.get(id),
+  flushed(ok: boolean): void {
+    pendingFlush?.(ok);
+  },
 };
+
+// Zatvaranje glavnog prozora čeka da renderer upiše nesačuvane izmene posla (automatsko čuvanje je odloženo).
+let pendingFlush: ((ok: boolean) => void) | null = null;
+const FLUSH_TIMEOUT_MS = 8000;
+
+function requestFlush(win: BrowserWindow): Promise<boolean> {
+  if (win.webContents.isDestroyed() || win.webContents.isCrashed()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => done(false), FLUSH_TIMEOUT_MS);
+    const done = (ok: boolean) => {
+      clearTimeout(timer);
+      pendingFlush = null;
+      resolve(ok);
+    };
+    pendingFlush = done;
+    win.webContents.send('app.flush');
+  });
+}
 
 /** Podešavanja koja menjaju samu aplikaciju. Tema ide kroz nativeTheme, pa CSS (prefers-color-scheme) prati izbor
  *  bez ikakve skripte i bez treperenja pri pokretanju. */
@@ -116,6 +137,32 @@ function applySetting(key: string, value: unknown): void {
 
 function openMainWindow(): void {
   const win = createWindow();
+  let flushed = false;
+  let flushing = false;
+  win.on('close', (e) => {
+    if (flushed) return;
+    e.preventDefault();
+    if (flushing) return;
+    flushing = true;
+    void requestFlush(win).then(async (ok) => {
+      if (!ok) {
+        const r = await dialog.showMessageBox(win, {
+          type: 'warning',
+          message: 'Poslednje izmene posla nisu sačuvane.',
+          detail: 'Čuvanje u bazu nije uspelo. Ako zatvorite program, te izmene se gube.',
+          buttons: ['Ostani u programu', 'Zatvori bez čuvanja'],
+          defaultId: 0,
+          cancelId: 0,
+        });
+        if (r.response !== 1) {
+          flushing = false;
+          return;
+        }
+      }
+      flushed = true;
+      win.close();
+    });
+  });
   // zatvaranjem glavnog prozora zatvaraju se i prozori poređenja, pa aplikacija izlazi
   win.on('closed', () => {
     for (const w of BrowserWindow.getAllWindows()) w.close();
