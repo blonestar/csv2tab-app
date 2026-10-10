@@ -462,6 +462,8 @@ try {
   console.log(`veliki spisak: ${N} zapisa, u DOM-u ${rendered} redova, kraj dostupan skrolom; uvoz do sačuvanog posla ${createMs} ms`);
   // sonda: vreme od Enter do prikaza izmene, dugi zadaci glavne niti i trajanje čuvanja
   await page.evaluate(() => { const s = document.querySelector('[data-testid=parts-scroll]'); s.scrollTop = 0; });
+  // tabela crta samo vidljive redove: pre izmene se čeka da se prikaže početak spiska (inače bi ćelija nestala usred izmene)
+  await page.waitForFunction(() => document.querySelector('tr[data-key] td.rn')?.textContent === '1');
   await page.evaluate(() => {
     const probe = (window.__probe = { states: [], long: [], keyAt: 0, shownAt: 0 });
     new PerformanceObserver((l) => { for (const e of l.getEntries()) probe.long.push(Math.round(e.duration)); }).observe({ entryTypes: ['longtask'] });
