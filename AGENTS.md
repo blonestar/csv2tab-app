@@ -4,8 +4,9 @@ Plan aplikacije, arhitektura i faze su u `PROJECT.md`. Pročitaj ga pre rada i o
 
 ## Dva repoa
 
-- Ovaj repo je **samo Electron ljuska i pakovanje**. Logika konverzije i UI žive u repou `csv2tab`, koji je ovde
-  git submodul u `web/`. Ne kopiraj kod iz `web/` i ne menjaj ga u prolazu.
+- Ovaj repo je **cela desktop aplikacija**: interfejs, baza, glavni proces i pakovanje. **Jezgro konverzije**
+  (`web/src/lib`, katalog, fixture fajlovi) živi u repou `csv2tab`, koji je ovde git submodul u `web/`. Jezgro se
+  uvozi preko aliasa `@core`; ne kopiraj kod iz `web/` i ne menjaj ga u prolazu. Web UI se ovde ne koristi.
 - Izmena u `web/` je izmena u drugom repou: posebna grana i PR u `csv2tab`, po pravilima iz `web/AGENTS.md`
   (grane, verzija, merge). Tek kad je tamo mergeovano, ovde se pomera pokazivač submodula
   (`git -C web fetch && git -C web checkout origin/main`, pa commit).
@@ -20,19 +21,21 @@ Plan aplikacije, arhitektura i faze su u `PROJECT.md`. Pročitaj ga pre rada i o
 
 ## Verzija (SemVer)
 
-Verzija ljuske je `version` u `package.json`, nezavisna od verzije weba (`web/package.json`). Agent je **sam podiže**
+Verzija aplikacije je `version` u `package.json`, nezavisna od verzije weba (`web/package.json`). Agent je **sam podiže**
 kad promena to zahteva. Format je `MAJOR.MINOR.PATCH`.
 
 | Deo | Kada se podiže | Primeri |
 | --- | --- | --- |
-| **MAJOR** | Nekompatibilna promena za korisnika | podešavanja ili origin koji se više ne čitaju, uklonjena funkcija, promenjen `.tab` izlaz |
-| **MINOR** | Nova funkcija | nova stavka menija, nov tip paketa, asocijacija fajla, web minor u submodulu |
-| **PATCH** | Ispravka ili sitnica | greška u dijalogu, ikonica, web patch u submodulu |
+| **MAJOR** | Nekompatibilna promena za korisnika | baza ili podešavanja koji se više ne čitaju, uklonjena funkcija, promenjen `.tab` izlaz |
+| **MINOR** | Nova funkcija | nova stavka menija, nov tip paketa, asocijacija fajla, nova tabela u bazi, minor jezgra u submodulu |
+| **PATCH** | Ispravka ili sitnica | greška u dijalogu, ikonica, patch jezgra u submodulu |
 
 - **Dok je verzija `0.y.z`**, nekompatibilna promena podiže **MINOR**. Prelazak na `1.0.0` je odluka korisnika.
 - **Jedno podizanje po grani/PR-u**, u posebnom commitu na kraju grane (npr. `Verzija 0.2.0`). Proveri
   `git diff main -- package.json` pre podizanja.
-- **Ne podiže se** za testove, dokumentaciju, refaktorisanje bez promene ponašanja, dev zavisnosti i CI.
+- **Ne podiže se** za testove, dokumentaciju, refaktorisanje bez promene ponašanja, dev zavisnosti i CI, ni za
+  pomeranje submodula koje dira samo web UI.
+- Promena šeme baze ide uvek kao **nova migracija**; postojeće migracije se ne menjaju posle merge-a.
 - Komanda: `npm version <major|minor|patch> --no-git-tag-version`.
 - Git tag (`v0.2.0`) se pravi posle merge-a u `main` i samo na zahtev korisnika. Tag pokreće izdanje.
 - U završnoj poruci navedi staru i novu verziju i zašto je izabran taj nivo.
@@ -40,7 +43,7 @@ kad promena to zahteva. Format je `MAJOR.MINOR.PATCH`.
 ## Pull request i merge
 
 Repo je `blonestar/csv2tab-app` (privatan). Posle otvaranja PR-a agent ga **sam mergeuje** u `main` kad provere prođu.
-Dok CI ne postoji (faza 5 u `PROJECT.md`), PR nema provera, pa agent pre merge-a sam pokreće proveru iz odeljka
+Dok CI ne postoji (faza 8 u `PROJECT.md`), PR nema provera, pa agent pre merge-a sam pokreće proveru iz odeljka
 „Provera pre predaje" i navodi rezultat u PR-u.
 
 1. Otvori PR, pa `gh pr checks <broj> --watch --fail-fast` (ako provere postoje).
@@ -54,6 +57,9 @@ Dok CI ne postoji (faza 5 u `PROJECT.md`), PR nema provera, pa agent pre merge-a
 
 ## Provera pre predaje
 
-- Web deo: `npm run web:build` (i `npm --prefix web test` ako je submodul pomeren).
-- Ljuska: typecheck, build i smoke test, čim postoje (faze 2 i 3 u `PROJECT.md`).
+- Jezgro: `npm --prefix web test` ako je submodul pomeren.
+- Aplikacija: typecheck, build, testovi baze i smoke test, čim postoje (faze 1 do 3 u `PROJECT.md`). Dok ne
+  postoje, proveri da `npm run web:build` prolazi.
+- Electron pokrenut iz alata koji je i sam Electron aplikacija može da nasledi `ELECTRON_RUN_AS_NODE=1` i tada se
+  ponaša kao običan Node. Pokreći ga sa `env -u ELECTRON_RUN_AS_NODE`.
 - Ne tvrdi da nešto radi na Windowsu ako je provereno samo na Linuxu. Napiši šta je gde provereno.
