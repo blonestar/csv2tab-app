@@ -1,5 +1,5 @@
 // Izvoz jednim klikom: provera šta u WT folderu već postoji, pitanje (sa razlikama) samo kad se fajl razlikuje, upis.
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { compareParts } from '@core/compare';
 import { readWtTab, type WtPart } from '@core/wtTab';
 import { DiffSummary, DiffTable } from '../components/DiffTable';
@@ -56,12 +56,18 @@ function DiffItem({ file, existing, name, checked, onCheck }: { file: ExportFile
   );
 }
 
-export function ExportControls({ derived }: { derived: DerivedJob }) {
+export function ExportControls({ derived, exportRequest }: { derived: DerivedJob; exportRequest?: number }) {
   const { session, flush, applyExports } = useSession();
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<Banner>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const handled = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (exportRequest === undefined || handled.current === exportRequest) return;
+    handled.current = exportRequest;
+    if (!busy && !pending && derived.canExport) void run();
+  }, [exportRequest]);
 
   async function finish(files: ExportFile[], overwrite: string[]) {
     const res = await window.api.export.write(files.map((f) => ({ name: f.name, bytes: f.bytes, material: f.material })), overwrite, session?.jobId ?? null);

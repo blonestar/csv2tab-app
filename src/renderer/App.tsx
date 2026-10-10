@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { MenuRequest } from '../shared/api';
 import { About } from './pages/About';
 import { Catalog } from './pages/Catalog';
 import { Jobs } from './pages/Jobs';
@@ -17,6 +18,16 @@ type PageId = (typeof PAGES)[number]['id'];
 
 export function App() {
   const [page, setPage] = useState<PageId>('jobs');
+  const [request, setRequest] = useState<MenuRequest | null>(null);
+  const serial = useRef(0);
+  useEffect(() => window.api.lifecycle.onCommand((kind) => {
+    if (kind === 'theme-changed') return;
+    if (kind === 'settings' || kind === 'about') setPage(kind);
+    else {
+      setPage('jobs');
+      setRequest({ kind, id: ++serial.current });
+    }
+  }), []);
   const View = PAGES.find((p) => p.id === page)!.view;
   return (
     <SettingsProvider>
@@ -36,7 +47,7 @@ export function App() {
           ))}
         </nav>
         <main className="content">
-          <View />
+          {page === 'jobs' ? <Jobs request={request} onHandled={(id) => setRequest((r) => r?.id === id ? null : r)} /> : <View />}
         </main>
       </div>
     </SessionProvider>

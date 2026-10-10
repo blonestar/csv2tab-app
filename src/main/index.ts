@@ -1,18 +1,23 @@
 // Glavni proces: app:// protokol, prozor, bezbednosna podešavanja.
-import { app, BrowserWindow, dialog, nativeTheme, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, Menu, nativeTheme, protocol, screen, session, shell } from 'electron';
 import { readFile } from 'node:fs/promises';
-import { dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { APP_ORIGIN, APP_SCHEME, type ComparePayload } from '../shared/api';
+import { APP_ORIGIN, APP_SCHEME, type ComparePayload, type MainCommand } from '../shared/api';
 import { resolveAppPath } from './appPath';
 import { CSP_BUILT, cspDev } from './csp';
 import catalog from '../../web/src/data/wt-catalog.json' with { type: 'json' };
 import type { WtCatalog } from '@core/catalog';
 import { discardStaged } from './db/backup';
 import { DatabaseTooNewError, openDatabase, type AppDatabase } from './db';
-import { getSetting } from './db/settings';
+import { getSetting, setSetting } from './db/settings';
 import { registerIpc } from './ipc';
+import { filesFromArguments } from './arguments';
+import { readOpenedFile } from './files';
+import { rememberOpenedPath } from './openedPaths';
+import { installMenu } from './menu';
+import { restoreWindowState } from './windowState';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const RENDERER_ROOT = join(here, '../renderer');
@@ -24,6 +29,10 @@ const MIGRATIONS = join(here, '../../migrations');
 // Razvoj: dev.mjs zadaje adresu Vite servera. Spakovana aplikacija je ignoriše.
 const devUrl = app.isPackaged ? undefined : process.env.CSV2TAB_DEV_URL;
 const testMode = process.env.CSV2TAB_TEST === '1';
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+const pendingFiles = filesFromArguments(process.argv, process.cwd(), app.isPackaged);
+const lock = { restoring: false };
 
 protocol.registerSchemesAsPrivileged([
   { scheme: APP_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
@@ -66,9 +75,12 @@ function isInternal(url: string): boolean {
 /** Glavni prozor i prozori poređenja učitavaju isti renderer, sa istim bezbednosnim podešavanjima i preloadom;
  *  prozor poređenja se razlikuje samo po `#compare=<id>` u adresi. */
 function createWindow(hash = '', title = 'csv2tab'): BrowserWindow {
+  const stored = !hash ? database?.sqlite.prepare("SELECT value FROM meta WHERE key = 'window_state'").get() as { value: string } | undefined : undefined;
+  const bounds = restoreWindowState(stored?.value, screen.getAllDisplays().map((d) => d.workArea));
   const win = new BrowserWindow({
     width: hash ? 1000 : 1100,
     height: 720,
+    ...(bounds ?? {}),
     minWidth: 760,
     minHeight: 480,
     title,
@@ -81,7 +93,10 @@ function createWindow(hash = '', title = 'csv2tab'): BrowserWindow {
       webSecurity: true,
     },
   });
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => {
+    if (bounds?.maximized) win.maximize();
+    win.show();
+  });
 
   // Navigacija van interfejsa se blokira, spoljni linkovi idu u sistemski browser.
   win.webContents.on('will-navigate', (e, url) => {
@@ -101,6 +116,17 @@ let mainWindow: BrowserWindow | undefined;
 const compares = new Map<string, ComparePayload>();
 
 const windows = {
+  async nextFile() {
+    const path = pendingFiles.shift();
+    if (!path) return null;
+    try {
+      const file = await readOpenedFile(path);
+      rememberOpenedPath(file.name, file.bytes, path);
+      return file;
+    } catch {
+      throw new Error(`Fajl „${basename(path)}“ ne može da se uveze. Proverite da postoji i nije veći od 50 MB.`);
+    }
+  },
   openCompare(payload: ComparePayload): void {
     const id = randomUUID();
     compares.set(id, payload);
@@ -121,27 +147,48 @@ const windows = {
 
 // Zatvaranje glavnog prozora čeka da renderer upiše nesačuvane izmene posla (automatsko čuvanje je odloženo).
 let pendingFlush: ((ok: boolean) => void) | null = null;
+let flushingRequest: Promise<boolean> | null = null;
 const FLUSH_TIMEOUT_MS = 8000;
 
 function requestFlush(win: BrowserWindow): Promise<boolean> {
   if (win.webContents.isDestroyed() || win.webContents.isCrashed()) return Promise.resolve(true);
-  return new Promise((resolve) => {
+  if (flushingRequest) return flushingRequest;
+  flushingRequest = new Promise((resolve) => {
     const timer = setTimeout(() => done(false), FLUSH_TIMEOUT_MS);
     const done = (ok: boolean) => {
       clearTimeout(timer);
       pendingFlush = null;
+      flushingRequest = null;
       resolve(ok);
     };
     pendingFlush = done;
     win.webContents.send('app.flush');
   });
+  return flushingRequest;
 }
 
 /** Podešavanja koja menjaju samu aplikaciju. Tema ide kroz nativeTheme, pa CSS (prefers-color-scheme) prati izbor
  *  bez ikakve skripte i bez treperenja pri pokretanju. */
 function applySetting(key: string, value: unknown): void {
-  if (key === 'theme') nativeTheme.themeSource = value as 'system' | 'light' | 'dark';
+  if (key === 'theme') {
+    nativeTheme.themeSource = value as 'system' | 'light' | 'dark';
+    const item = Menu.getApplicationMenu()?.getMenuItemById(`theme-${String(value)}`);
+    if (item) item.checked = true;
+  }
 }
+
+function command(kind: MainCommand): void {
+  if (!mainWindow || mainWindow.isDestroyed() || lock.restoring) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  mainWindow.webContents.send('app.command', kind);
+}
+
+if (gotLock) app.on('second-instance', (_event, argv, cwd) => {
+  pendingFiles.push(...filesFromArguments(argv, cwd, app.isPackaged));
+  command('pending-files');
+});
 
 function openMainWindow(): void {
   const win = createWindow();
@@ -169,6 +216,8 @@ function openMainWindow(): void {
         }
       }
       flushed = true;
+      database?.sqlite.prepare("INSERT INTO meta (key, value) VALUES ('window_state', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+        .run(JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() }));
       win.close();
     });
   });
@@ -202,6 +251,7 @@ function openDb(): AppDatabase | undefined {
 }
 
 app.whenReady().then(() => {
+  if (!gotLock) return;
   database = openDb();
   if (!database) {
     app.exit(1);
@@ -218,7 +268,13 @@ app.whenReady().then(() => {
   } else {
     serveApp();
   }
-  registerIpc({ devUrl, testMode, db: database, dbOptions: dbOptions(), lock: { restoring: false }, applySetting, windows });
+  registerIpc({ devUrl, testMode, db: database, dbOptions: dbOptions(), lock, applySetting, windows });
+  installMenu(command, getSetting(database.sqlite, 'theme'), (theme) => {
+    if (lock.restoring || !database) return;
+    setSetting(database.sqlite, 'theme', theme);
+    applySetting('theme', theme);
+    command('theme-changed');
+  });
   openMainWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) openMainWindow();

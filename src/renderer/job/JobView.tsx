@@ -52,7 +52,7 @@ function MetaField({ value, label, placeholder, className, testId, maxLength, on
   );
 }
 
-export function JobView({ session, derived }: { session: JobSession; derived: DerivedJob | null }) {
+export function JobView({ session, derived, exportRequest }: { session: JobSession; derived: DerivedJob | null; exportRequest?: number }) {
   const { catalog, setState, setTab, saveStatus, saveError, flush, updateMeta, deleteJob } = useSession();
   const [scope, setScope] = useState('');
   const [note, setNote] = useState<string | null>(null);
@@ -171,7 +171,7 @@ export function JobView({ session, derived }: { session: JobSession; derived: De
           </select>
         )}
         <button type="button" className="btn" data-testid="compare" disabled={!derived.records.length} onClick={() => void compareWithTab()}>Uporedi sa .tab…</button>
-        <ExportControls derived={derived} />
+        <ExportControls derived={derived} exportRequest={exportRequest} />
       </div>
       {errors.length > 0 && (
         <ul className="issues errors" data-testid="issues-errors">
