@@ -3,9 +3,11 @@
 // materijala ih ne dira.
 import { fitName } from '@core/wtTab';
 import type { ColumnMapping, Field, PartRecord } from '@core/parts';
-import type { EditField, JobState, MaterialChoice, PartEdit } from '../../shared/job';
+import type { EditField, JobState, MaterialChoice, MemoryField, PartEdit } from '../../shared/job';
+import { sameEdgeRules } from '../../shared/edgeRules';
+import type { SettingsMap } from '../../shared/settings';
 
-const resetDerived = (s: JobState): JobState => ({ ...s, mapping: 'auto', edits: {} });
+const resetDerived = (s: JobState): JobState => ({ ...s, mapping: 'auto', mappingFromMemory: false, edits: {} });
 
 export const withEncoding = (s: JobState, encoding: JobState['encoding']): JobState => ({ ...resetDerived(s), encoding });
 export const withDelimiter = (s: JobState, delimiter: string): JobState => ({ ...resetDerived(s), delimiter });
@@ -15,9 +17,27 @@ export const withMerge = (s: JobState, merge: boolean): JobState => ({ ...s, mer
 export const withMappingField = (s: JobState, current: ColumnMapping, field: Field, column: number): JobState => ({
   ...s,
   mapping: { ...current, [field]: column },
+  mappingFromMemory: false,
   edits: {},
 });
-export const withAutoMapping = (s: JobState): JobState => ({ ...s, mapping: 'auto', edits: {} });
+export const withAutoMapping = (s: JobState): JobState => ({ ...s, mapping: 'auto', mappingFromMemory: false, edits: {} });
+
+type JobRules = Pick<SettingsMap, 'edgeRules' | 'decorRule'>;
+
+/** Snimak pravila u poslu se razlikuje od trenutnih podešavanja (tabela kantovanja ili pravilo za jednobojne dekore). */
+export const rulesDiffer = (s: Pick<JobState, 'edgeRules' | 'decorRule'>, current: JobRules): boolean =>
+  s.decorRule !== current.decorRule || !sameEdgeRules(s.edgeRules, current.edgeRules);
+
+/**
+ * Primenjuje trenutna podešavanja na posao (jedna radnja iz kartice Izvor). Obična promena stanja: čuva se sama i
+ * ulazi u stanje izvoza kao svaka druga. Ručne izmene se ne brišu; one čiji se ključ zbog novog spajanja izgubi
+ * prijavljuje `orphanEdits`, kao pri promeni smera vlakna.
+ */
+export const withCurrentRules = (s: JobState, current: JobRules): JobState => ({
+  ...s,
+  edgeRules: current.edgeRules.map((r) => ({ a: r.a, b: r.b, code: r.code })),
+  decorRule: current.decorRule,
+});
 
 /** Pristup bez prototipa: naziv materijala može biti bilo šta (i "__proto__"). */
 export function choiceOf(s: Pick<JobState, 'materials'>, material: string): MaterialChoice {
@@ -28,6 +48,10 @@ export function choiceOf(s: Pick<JobState, 'materials'>, material: string): Mate
 export function withChoice(s: JobState, material: string, patch: Partial<Record<keyof MaterialChoice, unknown>>): JobState {
   const next: Record<string, unknown> = { ...choiceOf(s, material), ...patch };
   for (const k of Object.keys(next)) if (next[k] === undefined) delete next[k];
+  // polje koje korisnik menja više nije „iz pamćenja"; oznaka se uklanja i kad polje nestane
+  const mem = (next.fromMemory as MemoryField[] | undefined)?.filter((f) => !Object.hasOwn(patch, f) && Object.hasOwn(next, f));
+  if (mem?.length && !Object.hasOwn(patch, 'fromMemory')) next.fromMemory = mem;
+  else if (!Object.hasOwn(patch, 'fromMemory')) delete next.fromMemory;
   const materials = { ...s.materials };
   delete (materials as Record<string, unknown>)[material];
   if (Object.keys(next).length) return { ...s, materials: { ...materials, [material]: next as MaterialChoice } };

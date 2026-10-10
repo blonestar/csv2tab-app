@@ -1,6 +1,7 @@
 // Provera oblika argumenata koje šalje renderer; čiste funkcije (bez Electrona), pa se testiraju u Node-u.
 import { HEADER_SIZE, RECORD_SIZE, readWtTab } from '../../../web/src/lib/wtTab';
 import type { ComparePayload, ExportItem, JobMeta } from '../../shared/api';
+import { memoryUpdateArg } from '../../shared/memory';
 import { MAX_OPEN_BYTES, kindFromName, type OpenedFile } from '../../shared/job';
 import { STATE_LIMITS, parseJobState } from '../../shared/jobStateCheck';
 import {
@@ -162,7 +163,9 @@ function savedOutputsArg(v: unknown): SavedOutput[] {
 /** Sve što renderer šalje pri čuvanju posla: stanje (strogo), zapisi (opsezi) i izlazni fajlovi (veličine). */
 export function jobSaveArg(v: unknown): JobSave {
   if (!isObj(v)) throw new Error('Podaci posla nisu ispravni.');
-  return { state: parseJobState(v.state), parts: savedPartsArg(v.parts), outputs: savedOutputsArg(v.outputs) };
+  const save: JobSave = { state: parseJobState(v.state), parts: savedPartsArg(v.parts), outputs: savedOutputsArg(v.outputs) };
+  if (v.remember !== undefined) save.remember = memoryUpdateArg(v.remember);
+  return save;
 }
 
 export function jobListQueryArg(v: unknown): JobListQuery {

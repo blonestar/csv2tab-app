@@ -2,10 +2,15 @@
 // Vraća NOV objekat sa tačno poznatim poljima (nepoznato polje, pogrešan tip, nepoznata verzija ili preveliki spisak
 // se odbijaju), pa ni stanje iz renderera ni staro stanje iz baze ne stiže dalje neproverno.
 import { DELIMITERS } from '../../web/src/lib/csv';
-import { FIELDS } from '../../web/src/lib/parts';
-import { EDIT_FIELDS, type EditField, type JobState, type MaterialChoice, type PartEdit } from './job';
+import { DEFAULT_EDGE_RULES, FIELDS, type EdgeRule } from '../../web/src/lib/parts';
+import { cloneEdgeRules, edgeRulesProblem } from './edgeRules';
+import { EDIT_FIELDS, MEMORY_FIELDS, type EditField, type JobState, type MaterialChoice, type MemoryField, type PartEdit } from './job';
 
-export const JOB_STATE_VERSION = 1;
+/** Najnovija verzija; stanja starijih verzija se čitaju i prevode (`upgradeJobStateV1`). */
+export const JOB_STATE_VERSION = 2;
+
+/** Stanje verzije 1 (faze 3 i 4): bez snimka pravila. Postoji samo da bi se stari poslovi čitali. */
+export type JobStateV1 = Omit<JobState, 'version' | 'edgeRules' | 'decorRule' | 'mappingFromMemory'> & { version: 1 };
 
 /** Ograničenja protiv besmislenih veličina (jedan .tab ima najviše 65535 zapisa). */
 export const STATE_LIMITS = {
@@ -48,9 +53,9 @@ function onlyKeys(o: Record<string, unknown>, allowed: readonly string[], path: 
 
 const int = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 
-function parseChoice(v: unknown, path: string): MaterialChoice {
+function parseChoice(v: unknown, path: string, version: 1 | 2): MaterialChoice {
   if (!isObj(v)) fail(path, 'očekivan je objekat');
-  onlyKeys(v, ['wt', 'band', 'grain', 'fileName'], path);
+  onlyKeys(v, version === 1 ? ['wt', 'band', 'grain', 'fileName'] : ['wt', 'band', 'grain', 'fileName', 'fromMemory'], path);
   const out: MaterialChoice = {};
   if (Object.hasOwn(v, 'wt')) {
     if (v.wt !== null && !(typeof v.wt === 'string' && v.wt.length <= STATE_LIMITS.text)) fail(`${path}.wt`, 'očekivana je šifra ili null');
@@ -67,6 +72,15 @@ function parseChoice(v: unknown, path: string): MaterialChoice {
   if (Object.hasOwn(v, 'fileName')) {
     if (typeof v.fileName !== 'string' || v.fileName.length > STATE_LIMITS.text) fail(`${path}.fileName`, 'očekivan je tekst');
     out.fileName = v.fileName;
+  }
+  if (Object.hasOwn(v, 'fromMemory')) {
+    const f = v.fromMemory;
+    if (!Array.isArray(f) || f.length === 0 || f.length > MEMORY_FIELDS.length || new Set(f).size !== f.length || !f.every((x) => (MEMORY_FIELDS as readonly unknown[]).includes(x))) {
+      fail(`${path}.fromMemory`, 'očekivan je spisak polja');
+    }
+    // polje označeno kao preuzeto mora zaista da postoji u izboru
+    for (const x of f as MemoryField[]) if (!Object.hasOwn(v, x)) fail(`${path}.fromMemory`, `polje „${x}" nije zadato`);
+    out.fromMemory = [...(f as MemoryField[])];
   }
   return out;
 }
@@ -98,17 +112,31 @@ function parseMapping(v: unknown): JobState['mapping'] {
   return out as JobState['mapping'];
 }
 
-/** Proverava i vraća JobState; baca JobStateError. */
+/**
+ * Prevod stanja verzije 1 u verziju 2. Svi stari poslovi su računati sa `DEFAULT_EDGE_RULES` i ugrađenim
+ * `defaultGrain` jezgra (pravilo za jednobojne dekore uključeno), pa im snimak dobija upravo to i izlaz ostaje isti.
+ * Čista funkcija; ništa se ne upisuje u bazu dok se posao ne sačuva.
+ */
+export function upgradeJobStateV1(s: JobStateV1): JobState {
+  const { version: _version, ...rest } = s;
+  return { ...rest, version: 2, edgeRules: cloneEdgeRules(DEFAULT_EDGE_RULES), decorRule: true, mappingFromMemory: false };
+}
+
+const KEYS_V1 = ['version', 'encoding', 'delimiter', 'sheet', 'mapping', 'merge', 'materials', 'edits'] as const;
+const KEYS_V2 = [...KEYS_V1, 'edgeRules', 'decorRule', 'mappingFromMemory'] as const;
+
+/** Proverava i vraća JobState (uvek najnovije verzije; verzija 1 se prevodi); baca JobStateError. */
 export function parseJobState(v: unknown): JobState {
   if (!isObj(v)) fail('stanje', 'očekivan je objekat');
-  if (v.version !== JOB_STATE_VERSION) {
+  if (v.version !== 1 && v.version !== 2) {
     throw new JobStateError(
       typeof v.version === 'number' && v.version > JOB_STATE_VERSION
-        ? `Posao je sačuvan novijom verzijom programa (stanje verzije ${v.version}); ova verzija zna samo verziju ${JOB_STATE_VERSION}.`
+        ? `Posao je sačuvan novijom verzijom programa (stanje verzije ${v.version}); ova verzija zna samo do verzije ${JOB_STATE_VERSION}.`
         : 'Stanje posla ima nepoznatu verziju.',
     );
   }
-  onlyKeys(v, ['version', 'encoding', 'delimiter', 'sheet', 'mapping', 'merge', 'materials', 'edits'], 'stanje');
+  const version = v.version;
+  onlyKeys(v, version === 1 ? KEYS_V1 : KEYS_V2, 'stanje');
   if (v.encoding !== 'auto' && !(typeof v.encoding === 'string' && ENCODINGS.includes(v.encoding))) fail('encoding', 'nepoznato kodiranje');
   if (v.delimiter !== 'auto' && !(typeof v.delimiter === 'string' && (DELIMITERS as readonly string[]).includes(v.delimiter))) fail('delimiter', 'nepoznat separator');
   if (!int(v.sheet, 0, STATE_LIMITS.sheet)) fail('sheet', 'očekivan je redni broj lista');
@@ -121,7 +149,7 @@ export function parseJobState(v: unknown): JobState {
   const materials = Object.fromEntries(
     matKeys.map((k) => {
       if (k.length > STATE_LIMITS.text) fail('materials', 'predugačak naziv materijala');
-      return [k, parseChoice((v.materials as Record<string, unknown>)[k], 'materials')];
+      return [k, parseChoice((v.materials as Record<string, unknown>)[k], 'materials', version)];
     }),
   );
 
@@ -135,7 +163,21 @@ export function parseJobState(v: unknown): JobState {
     }),
   );
 
-  return { version: 1, encoding: v.encoding as JobState['encoding'], delimiter: v.delimiter as string, sheet: v.sheet, mapping, merge: v.merge, materials, edits };
+  const common = { encoding: v.encoding as JobState['encoding'], delimiter: v.delimiter as string, sheet: v.sheet, mapping, merge: v.merge, materials, edits };
+  if (version === 1) return upgradeJobStateV1({ version: 1, ...common });
+
+  const problem = edgeRulesProblem(v.edgeRules);
+  if (problem) fail('edgeRules', problem);
+  if (typeof v.decorRule !== 'boolean') fail('decorRule', 'očekivano je da/ne');
+  if (typeof v.mappingFromMemory !== 'boolean') fail('mappingFromMemory', 'očekivano je da/ne');
+  if (v.mappingFromMemory && mapping === 'auto') fail('mappingFromMemory', 'mapiranje nije zadato');
+  return {
+    version: 2,
+    ...common,
+    edgeRules: cloneEdgeRules(v.edgeRules as EdgeRule[]),
+    decorRule: v.decorRule,
+    mappingFromMemory: v.mappingFromMemory,
+  };
 }
 
 /** Stanje iz JSON teksta (iz baze). */

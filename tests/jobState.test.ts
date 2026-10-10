@@ -3,18 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { writeWtTab } from '@core/wtTab';
 import { JobStateError, STATE_LIMITS, parseJobState, parseJobStateJson, stringifyJobState } from '../src/shared/jobStateCheck';
 import { jobFileArg, jobIdArg, jobListQueryArg, jobMetaArg, jobSaveArg, sha256Arg, exportItemsArg } from '../src/main/operations/validate';
+import { DEFAULT_EDGE_RULES } from '@core/parts';
+import { cloneEdgeRules } from '../src/shared/edgeRules';
 import type { JobState } from '../src/shared/job';
 
-const base = (): JobState => ({ version: 1, encoding: 'auto', delimiter: 'auto', sheet: 0, mapping: 'auto', merge: true, materials: {}, edits: {} });
+const base = (): JobState => ({ version: 2, encoding: 'auto', delimiter: 'auto', sheet: 0, mapping: 'auto', merge: true, materials: {}, edits: {}, edgeRules: cloneEdgeRules(DEFAULT_EDGE_RULES), decorRule: true, mappingFromMemory: false });
 const full = (): JobState => ({
-  version: 1,
+  version: 2,
   encoding: 'windows-1250',
   delimiter: ';',
   sheet: 2,
   mapping: { material: 0, length: 1, width: 2, qty: 3, designation: -1, edgeL1: 4, edgeL2: 5, edgeW1: 6, edgeW2: 7 },
   merge: false,
-  materials: { U702: { wt: 'U-702', band: 'ABS1', grain: 1, fileName: 'moj fajl' }, '': { wt: null }, 'bez izbora': {} },
+  materials: { U702: { wt: 'U-702', band: 'ABS1', grain: 1, fileName: 'moj fajl', fromMemory: ['wt', 'grain'] }, '': { wt: null }, 'bez izbora': {} },
   edits: { 'U702#1,2': { dim1: 100, dim2: 4294967295, edge1: 255, edge2: 0, grain: 1, qty: 65535, name: 'Šuma Đurđa' } },
+  edgeRules: [{ a: 0, b: 0, code: 0 }, { a: 0.5, b: 2, code: 7 }],
+  decorRule: false,
+  mappingFromMemory: true,
 });
 const bad = (v: unknown, re?: RegExp) => {
   const run = () => parseJobState(v);
@@ -43,7 +48,7 @@ describe('parseJobState', () => {
     for (const v of [null, undefined, 1, 'x', [], [base()], true]) bad(v);
   });
   it('nepoznata verzija: novija ima posebnu poruku', () => {
-    bad(mut((s) => { s.version = 2; }), /novijom verzijom/);
+    bad(mut((s) => { s.version = 3; }), /novijom verzijom/);
     bad(mut((s) => { s.version = 0; }), /nepoznatu verziju/);
     bad(mut((s) => { delete s.version; }), /nepoznatu verziju/);
     bad(mut((s) => { s.version = '1'; }), /nepoznatu verziju/);
@@ -71,6 +76,19 @@ describe('parseJobState', () => {
       ['mapping.qty', (s) => { (s.mapping as Record<string, unknown>).qty = '3'; }],
       ['mapping.qty', (s) => { (s.mapping as Record<string, unknown>).qty = -2; }],
       ['mapping.width', (s) => { delete (s.mapping as Record<string, unknown>).width; }],
+      ['edgeRules', (s) => { s.edgeRules = []; }],
+      ['edgeRules', (s) => { s.edgeRules = 'x'; }],
+      ['edgeRules', (s) => { (s.edgeRules as unknown[]).push({ a: 2, b: 0.5, code: 8 }); }],
+      ['edgeRules', (s) => { (s.edgeRules as unknown[]).push({ a: 1, b: 1, code: 256 }); }],
+      ['edgeRules', (s) => { (s.edgeRules as unknown[]).push({ a: 1, b: 1, code: 8, extra: 1 }); }],
+      ['decorRule', (s) => { s.decorRule = 1; }],
+      ['decorRule', (s) => { delete s.decorRule; }],
+      ['mappingFromMemory', (s) => { s.mappingFromMemory = 'da'; }],
+      ['mappingFromMemory', (s) => { s.mapping = 'auto'; }],
+      ['materials.fromMemory', (s) => { (s.materials as Record<string, Record<string, unknown>>).U702.fromMemory = []; }],
+      ['materials.fromMemory', (s) => { (s.materials as Record<string, Record<string, unknown>>).U702.fromMemory = ['fileName']; }],
+      ['materials.fromMemory', (s) => { (s.materials as Record<string, Record<string, unknown>>).U702.fromMemory = ['wt', 'wt']; }],
+      ['materials.fromMemory', (s) => { delete (s.materials as Record<string, Record<string, unknown>>).U702.band; (s.materials as Record<string, Record<string, unknown>>).U702.fromMemory = ['band']; }],
       ['materials', (s) => { s.materials = []; }],
       ['materials', (s) => { s.materials = null; }],
       ['materials.wt', (s) => { (s.materials as Record<string, Record<string, unknown>>).U702.wt = 5; }],
@@ -106,7 +124,7 @@ describe('parseJobState', () => {
     for (const t of ['', '{', 'nije json', 'null', '[]']) expect(() => parseJobStateJson(t)).toThrow(JobStateError);
   });
   it('ključ "__proto__" je običan ključ i ne menja prototip', () => {
-    const json = '{"version":1,"encoding":"auto","delimiter":"auto","sheet":0,"mapping":"auto","merge":true,"materials":{"__proto__":{"wt":"X"}},"edits":{"__proto__":{"qty":3}}}';
+    const json = JSON.stringify({ ...base() }).replace('"materials":{}', '"materials":{"__proto__":{"wt":"X"}}').replace('"edits":{}', '"edits":{"__proto__":{"qty":3}}');
     const s = parseJobStateJson(json);
     expect(Object.hasOwn(s.materials, '__proto__')).toBe(true);
     expect(Object.getPrototypeOf(s.materials)).toBe(Object.prototype);

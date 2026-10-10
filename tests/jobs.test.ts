@@ -23,6 +23,7 @@ import {
   type ExportToRecord,
 } from '../src/main/db/jobs';
 import { foldText, searchPatterns, searchText } from '../src/main/db/search';
+import { newJobState } from '../src/renderer/job/defaults';
 import type { JobState } from '../src/shared/job';
 import type { JobSave, SavedPart } from '../src/shared/jobs';
 
@@ -42,7 +43,7 @@ afterEach(() => {
 const rows = (q: string, ...a: (string | number)[]) => db.sqlite.prepare(q).all(...a) as Record<string, unknown>[];
 const n = (q: string, ...a: (string | number)[]) => Object.values(rows(q, ...a)[0])[0] as number;
 
-const state = (extra: Partial<JobState> = {}): JobState => ({ version: 1, encoding: 'auto', delimiter: 'auto', sheet: 0, mapping: 'auto', merge: true, materials: {}, edits: {}, ...extra });
+const state = (extra: Partial<JobState> = {}): JobState => ({ ...newJobState(), ...extra });
 const part = (material: string, name: string, dim1 = 1000, qty = 1): SavedPart => ({ material, wt: '', dim1, dim2: 300, edge1: 0, edge2: 0, grain: 0, qty, name });
 
 /** Izlazni fajl za materijal iz zapisa; `variant` menja bajtove (druga količina prvog zapisa). */
@@ -151,7 +152,7 @@ describe('čuvanje i čitanje posla', () => {
 
   it('stanje koje ne prolazi proveru daje poruku, ne grešku; posao se i dalje čita i briše', () => {
     const id = createJob(db.sqlite, 'X', file(), save([part('A', 'a')]));
-    db.sqlite.prepare('UPDATE jobs SET state = ? WHERE id = ?').run(JSON.stringify({ ...state(), version: 2 }), id);
+    db.sqlite.prepare('UPDATE jobs SET state = ? WHERE id = ?').run(JSON.stringify({ ...state(), version: 3 }), id);
     let j = getJob(db.sqlite, id)!;
     expect(j.state).toBeNull();
     expect(j.stateError).toMatch(/novijom verzijom/);

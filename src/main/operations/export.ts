@@ -25,10 +25,12 @@ export function exportOperations(ctx: IpcContext) {
         return [items, overwriteArg(args[1]), jobId];
       },
       async run(items, overwrite, jobId) {
+        const db = ctx.db.sqlite;
         // posao se proverava pre upisa: ne upisuje se fajl koji posle ne može da se zabeleži
         if (jobId !== null && !getJobItem(ctx.db.sqlite, jobId)) throw new Error('Posao ne postoji.');
         const res = await writeExport(wtFolder(ctx), items, overwrite);
         if (!res.ok || jobId === null) return res;
+        if (db !== ctx.db.sqlite || ctx.lock.restoring) return { ...res, recordError: 'Baza je promenjena tokom izvoza; izvoz nije zabeležen u vraćenoj bazi.' };
         // Beleži se samo ono što je zaista upisano ili već postoji bajt-identično; preskočeno i neuspelo se ne beleži.
         const toRecord: ExportToRecord[] = [];
         res.items.forEach((it, i) => {

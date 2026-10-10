@@ -4,7 +4,6 @@ import { ConfirmDialog } from '../components/ConfirmDialog';
 import { PartsTable } from '../components/PartsTable';
 import { STATUS_LABEL, errText } from '../format';
 import { useSession, type JobSession, type SaveStatus, type TabId } from '../session';
-import { EDGE_RULES } from './defaults';
 import type { DerivedJob } from './derive';
 import { ExportControls } from './ExportControls';
 import { ExportsTab, MaterialsTab, SourceTab } from './tabs';
@@ -193,7 +192,7 @@ export function JobView({ session, derived }: { session: JobSession; derived: De
         ))}
       </div>
       <div className="tabpanel" role="tabpanel">
-        {session.tab === 'parts' && <PartsTable derived={derived} setState={setState} rules={EDGE_RULES} />}
+        {session.tab === 'parts' && <PartsTable derived={derived} setState={setState} rules={session.state.edgeRules} />}
         {session.tab === 'materials' && <div className="scroll"><MaterialsTab {...props} catalog={catalog} /></div>}
         {session.tab === 'source' && <div className="scroll"><SourceTab {...props} /></div>}
         {session.tab === 'exports' && <div className="scroll"><ExportsTab exports={session.exports} /></div>}

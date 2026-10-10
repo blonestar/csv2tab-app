@@ -7,7 +7,7 @@ import type { WtCatalog } from '@core/catalog';
 import { readWtTab } from '@core/wtTab';
 import catalogJson from '../web/src/data/wt-catalog.json';
 import { convertToTab } from '../src/renderer/coreCheck';
-import { EDGE_RULES, newJobState } from '../src/renderer/job/defaults';
+import { newJobState } from '../src/renderer/job/defaults';
 import { deriveJob, exportFiles, type DeriveCache, type SourceFile } from '../src/renderer/job/derive';
 import {
   choiceOf,
@@ -28,7 +28,7 @@ const catalog = catalogJson as unknown as WtCatalog;
 const fx = (n: string) => new Uint8Array(readFileSync(resolve(__dirname, '../web/tests/fixtures', n)));
 const file = (name: string, kind: SourceFile['kind']): SourceFile => ({ name, kind, bytes: fx(name) });
 const kasmir = () => file('Kasmir Kronospan 012-010.csv', 'csv');
-const derive = (f: SourceFile, s: JobState, cache?: DeriveCache) => deriveJob(f, s, catalog, EDGE_RULES, cache);
+const derive = (f: SourceFile, s: JobState, cache?: DeriveCache) => deriveJob(f, s, catalog, cache);
 const bytesOf = (f: SourceFile, s: JobState) => exportFiles(derive(f, s)).map((x) => [x.name, Buffer.from(x.bytes).toString('hex')]);
 const json = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 

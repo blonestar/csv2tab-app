@@ -70,7 +70,8 @@ export function openDatabase(opts: OpenOptions): AppDatabase {
       schemaVersion: schemaVersion(db),
       backupPath,
       close() {
-        db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+        const checkpoint = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get() as { busy: number };
+        if (checkpoint.busy) throw new Error('Baza je zauzeta; sačekajte završetak čitanja pa pokušajte ponovo.');
         db.close();
       },
     };

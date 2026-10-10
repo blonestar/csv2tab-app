@@ -51,3 +51,17 @@ export async function pickFolder(testMode: boolean): Promise<string | null> {
   const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
   return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
 }
+
+/** Sistemski dijalog za izbor rezervne kopije baze; vraća putanju (u testu je zadaje promenljiva okruženja) ili null. */
+export async function pickBackupFile(testMode: boolean): Promise<string | null> {
+  const forced = testOverride(TEST_ENV.restore, hookCtx(testMode));
+  if (forced) return forced;
+  const opts = {
+    title: 'Izaberite rezervnu kopiju baze',
+    properties: ['openFile' as const],
+    filters: [{ name: 'Rezervna kopija (.db)', extensions: ['db'] }, { name: 'Svi fajlovi', extensions: ['*'] }],
+  };
+  const win = parent();
+  const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+  return r.canceled || !r.filePaths[0] ? null : r.filePaths[0];
+}

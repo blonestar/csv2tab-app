@@ -1,6 +1,9 @@
 // Podešavanja: zatvoren skup ključeva sa tipom vrednosti i proverom. Renderer ne šalje proizvoljne ključeve.
 // Novo podešavanje se dodaje samo ovde (u SETTINGS); tipovi, provera u glavnom procesu i most ga prate sami.
 
+import { DEFAULT_EDGE_RULES, type EdgeRule } from '../../web/src/lib/parts';
+import { cloneEdgeRules, isEdgeRules } from './edgeRules';
+
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
 
@@ -26,6 +29,14 @@ export const SETTINGS = {
   theme: def<Theme>({ default: 'system', is: (v): v is Theme => THEMES.includes(v as Theme) }),
   /** Folder u koji WT Input čita .tab fajlove. Prazno = nije zadat. */
   wtFolder: folderSetting(),
+  /** Folder za rezervne kopije baze. Prazno = nije zadat. */
+  backupFolder: folderSetting(),
+  /** Tabela šifara kantovanja za NOVE poslove; posao čuva svoj snimak (JobState.edgeRules). */
+  edgeRules: def<EdgeRule[]>({ default: cloneEdgeRules(DEFAULT_EDGE_RULES), is: (v): v is EdgeRule[] => isEdgeRules(v) }),
+  /** Jednobojni dekor (naziv oblika „U" + cifre) podrazumevano ne prati teksturu. Isključeno = prate je svi materijali. */
+  decorRule: def<boolean>({ default: true, is: (v): v is boolean => typeof v === 'boolean' }),
+  /** Spajanje istih delova u novim poslovima; svaki posao ima svoje (JobState.merge). */
+  mergeDefault: def<boolean>({ default: true, is: (v): v is boolean => typeof v === 'boolean' }),
 };
 
 export type SettingKey = keyof typeof SETTINGS;

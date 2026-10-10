@@ -5,6 +5,7 @@ import type { WtCatalog } from '@core/catalog';
 import type { WtPart } from '@core/wtTab';
 import type { OpenedFile } from './job';
 import type { JobDetail, JobExports, JobListItem, JobListQuery, JobListResult, JobSave, JobSavedResult } from './jobs';
+import type { MemoryFound, MemoryList, MemoryLookup, MemoryUpdate } from './memory';
 import type { FolderSettingKey, SettingKey, SettingValue, SettingsMap } from './settings';
 
 export interface AppInfo {
@@ -82,6 +83,35 @@ export interface JobMeta {
   note?: string;
 }
 
+/** Rezervna kopija koja je upravo napravljena. */
+export interface BackupInfo {
+  /** Ime fajla (putanju renderer ne vidi). */
+  name: string;
+  size: number;
+  /** Folder za rezervne kopije (za prikaz). */
+  folder: string;
+  jobs: number;
+}
+
+/** Kopija koju je korisnik izabrao za vraćanje, već proverena; vraćanje čeka potvrdu. */
+export interface RestorePreview {
+  /** Oznaka pripremljene kopije; šalje se nazad pri potvrdi. */
+  token: string;
+  fileName: string;
+  size: number;
+  schemaVersion: number;
+  /** Verzija šeme ove aplikacije; ako je veća od `schemaVersion`, kopija se pri vraćanju migrira. */
+  appSchemaVersion: number;
+  jobs: number;
+  /** Vreme izmene najnovijeg posla u kopiji (ms) ili null. */
+  newestJobAt: number | null;
+}
+
+export interface RestoreOutcome {
+  /** Ime sigurnosne kopije zamenjene baze (stoji pored žive baze). */
+  safetyName: string;
+}
+
 /** Operacije: ključ je ime IPC kanala, `args` su argumenti koje renderer šalje, `result` je odgovor. */
 export interface IpcOperations {
   'app.info': { args: []; result: AppInfo };
@@ -101,6 +131,15 @@ export interface IpcOperations {
   'jobs.update': { args: [id: number, meta: JobMeta]; result: JobListItem };
   'jobs.delete': { args: [id: number]; result: void };
   'jobs.exports': { args: [id: number]; result: JobExports };
+  'memory.lookup': { args: [query: MemoryLookup]; result: MemoryFound };
+  'memory.remember': { args: [update: MemoryUpdate]; result: void };
+  'memory.list': { args: []; result: MemoryList };
+  'memory.forget': { args: [kind: 'material' | 'mapping', key: string | null]; result: number };
+  'backup.create': { args: []; result: BackupInfo };
+  'backup.inspect': { args: []; result: RestorePreview | null };
+  'backup.restore': { args: [token: string]; result: RestoreOutcome };
+  'backup.cancel': { args: [token: string]; result: void };
+  'backup.finish': { args: []; result: void };
   'app.flushed': { args: [ok: boolean]; result: void };
   'compare.open': { args: [payload: ComparePayload]; result: void };
   'compare.get': { args: [id: string]; result: ComparePayload };
@@ -148,6 +187,27 @@ export interface Api {
     /** Briše posao i njegove sačuvane izvoze (fajlovi u WT folderu ostaju). */
     delete(id: number): Promise<void>;
     exports(id: number): Promise<JobExports>;
+  };
+  memory: {
+    /** Zapamćeni izbori za nazive materijala iz fajla i za potpis zaglavlja. */
+    lookup(query: MemoryLookup): Promise<MemoryFound>;
+    /** Upisuje izbore u pamćenje (npr. potvrđene izvozom). */
+    remember(update: MemoryUpdate): Promise<void>;
+    list(): Promise<MemoryList>;
+    /** Briše jedan zapis (po ključu materijala / potpisu zaglavlja) ili sve zapise te vrste (`null`). Vraća broj obrisanih. */
+    forget(kind: 'material' | 'mapping', key: string | null): Promise<number>;
+  };
+  backup: {
+    /** Rezervna kopija baze u folder za rezervne kopije. */
+    create(): Promise<BackupInfo>;
+    /** Dijalog za izbor kopije (main proces); proverava je i vraća šta sadrži. null kad korisnik odustane. */
+    inspect(): Promise<RestorePreview | null>;
+    /** Zamenjuje bazu pripremljenom kopijom (posle potvrde). Interfejs se zatim ponovo učitava preko `finish`. */
+    restore(token: string): Promise<RestoreOutcome>;
+    /** Odustajanje: briše pripremljenu kopiju. */
+    cancel(token: string): Promise<void>;
+    /** Posle vraćanja: ponovo učitava prozor nad novom bazom. */
+    finish(): Promise<void>;
   };
   lifecycle: {
     /** Glavni proces traži da se sve nesačuvano upiše pre zatvaranja prozora; poziv vraća funkciju za odjavu. */

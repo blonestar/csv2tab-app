@@ -1,6 +1,7 @@
 // Tipovi sačuvanih poslova: ono što renderer šalje pri čuvanju i ono što dobija iz glavnog procesa.
 // Bajtovi izvora i izvoza se čuvaju u bazi; renderer nikad ne dobija putanje.
 import type { JobState, SourceKind } from './job';
+import type { MemoryUpdate } from './memory';
 
 /** nikad izvezen / izvezen i nepromenjen / menjan posle poslednjeg izvoza */
 export type ExportStatus = 'never' | 'current' | 'changed';
@@ -32,6 +33,8 @@ export interface JobSave {
   state: JobState;
   parts: SavedPart[];
   outputs: SavedOutput[];
+  /** Izbori koje je korisnik u ovoj izmeni ručno promenio; upisuju se u pamćenje u istoj transakciji (samo `jobs.save`). */
+  remember?: MemoryUpdate;
 }
 
 /** Izlazni fajl onako kako je upisan u bazu (bez bajtova). */

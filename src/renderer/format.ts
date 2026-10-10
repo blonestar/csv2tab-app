@@ -11,3 +11,9 @@ export const STATUS_LABEL: Record<ExportStatus, string> = {
   current: 'Izvezen',
   changed: 'Menjan posle izvoza',
 };
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1).replace('.', ',')} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`;
+}

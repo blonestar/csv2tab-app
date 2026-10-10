@@ -1,0 +1,131 @@
+{
+ "A": {
+  "file": "Kasmir Kronospan 012-010.csv",
+  "state": {
+   "version": 1,
+   "encoding": "auto",
+   "delimiter": "auto",
+   "sheet": 0,
+   "mapping": "auto",
+   "merge": true,
+   "materials": {},
+   "edits": {}
+  },
+  "sha": "97aae13a4a26334c660e09d10523ff2d3d97def41fa49359fbc008ee5a13ad89",
+  "mats": [
+   [
+    "U702",
+    0
+   ]
+  ]
+ },
+ "B": {
+  "file": "Kasmir Kronospan 012-010.csv",
+  "state": {
+   "version": 1,
+   "encoding": "auto",
+   "delimiter": "auto",
+   "sheet": 0,
+   "mapping": "auto",
+   "merge": false,
+   "materials": {
+    "U702": {
+     "grain": 1
+    }
+   },
+   "edits": {}
+  },
+  "sha": "4bd295bc167bcb721c7c4e3150d0e374d55223a22174968d1de53b224e301006",
+  "mats": [
+   [
+    "U702",
+    1
+   ]
+  ]
+ },
+ "C": {
+  "file": "Stone oak Kronospan.csv",
+  "state": {
+   "version": 1,
+   "encoding": "auto",
+   "delimiter": "auto",
+   "sheet": 0,
+   "mapping": "auto",
+   "merge": true,
+   "materials": {},
+   "edits": {}
+  },
+  "sha": "193116fd4f9c411a0429e604a0e4b1f2f13b42c77dbee169c91700cb6053b21a",
+  "mats": [
+   [
+    "Drvo_dezen",
+    1
+   ]
+  ]
+ },
+ "D": {
+  "file": "Kasmir Kronospan 012-010.xlsx",
+  "state": {
+   "version": 1,
+   "encoding": "auto",
+   "delimiter": "auto",
+   "sheet": 0,
+   "mapping": "auto",
+   "merge": true,
+   "materials": {},
+   "edits": {}
+  },
+  "sha": "900f713c52c61262e3bf4f23793639ff06f364f662b91da158ba9eafc44e5555",
+  "mats": [
+   [
+    "012-010",
+    1
+   ]
+  ]
+ },
+ "E": {
+  "file": "Kasmir Kronospan 012-010.csv",
+  "state": {
+   "version": 1,
+   "encoding": "auto",
+   "delimiter": "auto",
+   "sheet": 0,
+   "mapping": "auto",
+   "merge": true,
+   "materials": {},
+   "edits": {
+    "U702#2": {
+     "qty": 9,
+     "edge1": 3
+    }
+   }
+  },
+  "sha": "9449483b15c92dc04dec9654ac689a5daba1dbfccbc42fc93c2263d9f90269f9",
+  "mats": [
+   [
+    "U702",
+    0
+   ]
+  ]
+ },
+ "F": {
+  "file": "Stone oak Kronospan 012-140.ods",
+  "state": {
+   "version": 1,
+   "encoding": "auto",
+   "delimiter": "auto",
+   "sheet": 0,
+   "mapping": "auto",
+   "merge": true,
+   "materials": {},
+   "edits": {}
+  },
+  "sha": "79f19f14ce1648fb33ee25b623941819b2038b3f9bed1d22d119725cb01f795d",
+  "mats": [
+   [
+    "012-140",
+    1
+   ]
+  ]
+ }
+}

@@ -15,6 +15,8 @@ export const TEST_ENV = {
   compare: 'CSV2TAB_TEST_COMPARE',
   /** Folder koji "izabere" dijalog za izbor foldera. */
   folder: 'CSV2TAB_TEST_FOLDER',
+  /** Fajl rezervne kopije koji "izabere" dijalog za vraćanje baze. */
+  restore: 'CSV2TAB_TEST_RESTORE',
   /** Svako čuvanje posla pada (simulacija greške baze), dok je promenljiva zadata. */
   failSave: 'CSV2TAB_TEST_FAIL_SAVE',
 } as const;

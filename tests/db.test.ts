@@ -8,6 +8,8 @@ import wtCatalog from '../web/src/data/wt-catalog.json' with { type: 'json' };
 import { DatabaseTooNewError, MigrationError, openDatabase, type AppDatabase } from '../src/main/db';
 import { catalogHash, readCatalog, syncCatalog } from '../src/main/db/catalog';
 import { getAllSettings, getSetting, setSetting } from '../src/main/db/settings';
+import { DEFAULT_EDGE_RULES } from '@core/parts';
+import { expectedTables } from '../src/main/db/backup';
 import { isSettingKey } from '../src/shared/settings';
 
 const catalog = wtCatalog as unknown as WtCatalog;
@@ -55,10 +57,9 @@ describe('prazna baza', () => {
     expect(count(db, 'SELECT count(*) AS n FROM edge_bands')).toBe(catalog.edgeBands.length);
     expect(count(db, "SELECT count(*) AS n FROM materials WHERE source <> 'builtin'")).toBe(0);
     const tables = (db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
-    expect(tables).toEqual(expect.arrayContaining(['jobs', 'job_parts', 'exports']));
-    // mapiranja su faza 5
-    expect(tables).not.toContain('material_map');
-    expect(tables).not.toContain('column_maps');
+    expect(tables).toEqual(expect.arrayContaining(['jobs', 'job_parts', 'exports', 'material_map', 'column_maps']));
+    // spisak očekivanih tabela po verziji (provera kopije pri vraćanju) mora da prati migracije
+    expect(tables.filter((t) => !t.startsWith('sqlite_')).sort()).toEqual(expectedTables(latest).sort());
   });
   it('koristi WAL i uključene strane ključeve', () => {
     const db = open();
@@ -140,7 +141,7 @@ describe('migracija 0001 -> 0002 (poslovi)', () => {
     old.close();
 
     const db = open();
-    expect(db.schemaVersion).toBe(2);
+    expect(db.schemaVersion).toBe(3); // sve do tekuće; ovde se proverava samo da šema 1 prežive i ima tabele poslova
     expect(db.backupPath).toBe(`${file()}.v1.bak`);
     expect(getSetting(db.sqlite, 'theme')).toBe('dark');
     expect(count(db, 'SELECT count(*) AS n FROM materials')).toBe(catalog.materials.length + 1);
@@ -154,6 +155,41 @@ describe('migracija 0001 -> 0002 (poslovi)', () => {
     // ponovno otvaranje: nema nove kopije ni izmena
     db.close();
     expect(open().backupPath).toBeNull();
+  });
+});
+
+describe('migracija 0002 -> 0003 (pamćenje izbora)', () => {
+  it('poslovi, izvozi i podešavanja prežive, kopija šeme 2 je napravljena, nove tabele su prazne', () => {
+    const only12 = mkdtempSync(join(dir, 'real12-'));
+    for (const f of ['0001_init.sql', '0002_poslovi.sql']) writeFileSync(join(only12, f), readFileSync(join(REAL_MIGRATIONS, f)));
+    const old = openDatabase({ file: file(), migrationsDir: only12, catalog });
+    expect(old.schemaVersion).toBe(2);
+    setSetting(old.sqlite, 'theme', 'light');
+    const state = JSON.stringify({ version: 1, encoding: 'auto', delimiter: 'auto', sheet: 0, mapping: 'auto', merge: true, materials: { U702: { wt: 'U-702' } }, edits: {} });
+    old.sqlite
+      .prepare(
+        `INSERT INTO jobs (name, created_at, updated_at, source_name, source_kind, source_size, source_sha256, state, source_bytes)
+         VALUES ('Stari posao', 1, 2, 'a.csv', 'csv', 3, 'ab', ?, ?)`,
+      )
+      .run(state, new Uint8Array([1, 2, 3]));
+    old.sqlite.prepare("INSERT INTO job_parts (job_id, position, material, wt_code, dim1, dim2, edge1, edge2, grain, qty, name) VALUES (1, 0, 'U702', 'U-702', 1, 2, 0, 0, 0, 1, 'x')").run();
+    old.sqlite.prepare("INSERT INTO exports (job_id, material, file_name, folder, exported_at, record_count, size, sha256, result, bytes) VALUES (1, 'U702', 'x.tab', '/wt', 2, 1, 3, 'ab', 'written', ?)").run(new Uint8Array([4, 5, 6]));
+    old.close();
+
+    const db = open();
+    expect(db.schemaVersion).toBe(3);
+    expect(db.backupPath).toBe(`${file()}.v2.bak`);
+    expect(getSetting(db.sqlite, 'theme')).toBe('light');
+    expect(db.sqlite.prepare('SELECT name, state FROM jobs').all()).toEqual([{ name: 'Stari posao', state }]); // stanje se ne prepisuje u migraciji
+    expect(count(db, 'SELECT count(*) AS n FROM job_parts')).toBe(1);
+    expect(db.sqlite.prepare('SELECT bytes FROM exports').get()).toMatchObject({ bytes: new Uint8Array([4, 5, 6]) });
+    expect(count(db, 'SELECT count(*) AS n FROM material_map')).toBe(0);
+    expect(count(db, 'SELECT count(*) AS n FROM column_maps')).toBe(0);
+    const copy = new DatabaseSync(db.backupPath!, { readOnly: true });
+    expect(copy.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 2 });
+    expect(copy.prepare("SELECT name FROM sqlite_master WHERE name IN ('material_map', 'column_maps')").all()).toEqual([]);
+    expect(copy.prepare('SELECT count(*) AS n FROM jobs').get()).toMatchObject({ n: 1 });
+    copy.close();
   });
 });
 
@@ -238,7 +274,7 @@ describe('podešavanja', () => {
     db.close();
     db = open();
     expect(getSetting(db.sqlite, 'theme')).toBe('dark');
-    expect(getAllSettings(db.sqlite)).toEqual({ theme: 'dark', wtFolder: '' });
+    expect(getAllSettings(db.sqlite)).toEqual({ theme: 'dark', wtFolder: '', backupFolder: '', edgeRules: DEFAULT_EDGE_RULES, decorRule: true, mergeDefault: true });
   });
   it('odbija pogrešan tip i nepoznatu vrednost, a stara vrednost ostaje', () => {
     const db = open();
