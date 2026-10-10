@@ -3,7 +3,8 @@ import { app, BrowserWindow, dialog, nativeTheme, protocol, session, shell } fro
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { APP_ORIGIN, APP_SCHEME } from '../shared/api';
+import { randomUUID } from 'node:crypto';
+import { APP_ORIGIN, APP_SCHEME, type ComparePayload } from '../shared/api';
 import { resolveAppPath } from './appPath';
 import { CSP_BUILT, cspDev } from './csp';
 import catalog from '../../web/src/data/wt-catalog.json' with { type: 'json' };
@@ -61,13 +62,15 @@ function isInternal(url: string): boolean {
   return url.startsWith(`${APP_ORIGIN}/`) || (!!devUrl && url.startsWith(devUrl));
 }
 
-function createWindow(): BrowserWindow {
+/** Glavni prozor i prozori poređenja učitavaju isti renderer, sa istim bezbednosnim podešavanjima i preloadom;
+ *  prozor poređenja se razlikuje samo po `#compare=<id>` u adresi. */
+function createWindow(hash = '', title = 'csv2tab'): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1100,
+    width: hash ? 1000 : 1100,
     height: 720,
     minWidth: 760,
     minHeight: 480,
-    title: 'csv2tab',
+    title,
     show: false,
     webPreferences: {
       preload: PRELOAD,
@@ -88,16 +91,35 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' };
   });
 
-  void win.loadURL(devUrl ?? `${APP_ORIGIN}/`);
+  void win.loadURL((devUrl ?? `${APP_ORIGIN}/`) + hash);
   return win;
 }
 
 let database: AppDatabase | undefined;
+const compares = new Map<string, ComparePayload>();
+
+const windows = {
+  openCompare(payload: ComparePayload): void {
+    const id = randomUUID();
+    compares.set(id, payload);
+    const win = createWindow(`#compare=${id}`, `Poređenje: ${payload.aName} / ${payload.bName}`);
+    win.on('closed', () => compares.delete(id));
+  },
+  getCompare: (id: string) => compares.get(id),
+};
 
 /** Podešavanja koja menjaju samu aplikaciju. Tema ide kroz nativeTheme, pa CSS (prefers-color-scheme) prati izbor
  *  bez ikakve skripte i bez treperenja pri pokretanju. */
 function applySetting(key: string, value: unknown): void {
   if (key === 'theme') nativeTheme.themeSource = value as 'system' | 'light' | 'dark';
+}
+
+function openMainWindow(): void {
+  const win = createWindow();
+  // zatvaranjem glavnog prozora zatvaraju se i prozori poređenja, pa aplikacija izlazi
+  win.on('closed', () => {
+    for (const w of BrowserWindow.getAllWindows()) w.close();
+  });
 }
 
 function openDb(): AppDatabase | undefined {
@@ -137,10 +159,10 @@ app.whenReady().then(() => {
   } else {
     serveApp();
   }
-  registerIpc({ devUrl, testMode, db: database, applySetting });
-  createWindow();
+  registerIpc({ devUrl, testMode, db: database, applySetting, windows });
+  openMainWindow();
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) openMainWindow();
   });
 });
 

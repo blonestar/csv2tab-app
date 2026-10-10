@@ -1,5 +1,5 @@
 import { getAllSettings, getSetting, setSetting } from '../db/settings';
-import { checkSetting, isSettingKey, type SettingKey } from '../../shared/settings';
+import { checkSetting, isFolderSetting, isSettingKey, type SettingKey } from '../../shared/settings';
 import { noArgs, type IpcContext, type Operation } from './types';
 
 function keyArg(v: unknown): SettingKey {
@@ -24,6 +24,8 @@ export function settingsOperations(ctx: IpcContext) {
       validate(args) {
         if (args.length !== 2) throw new Error('Očekivana su dva argumenta: ključ i vrednost.');
         const key = keyArg(args[0]);
+        // Folder bira korisnik kroz dijalog u glavnom procesu (files.chooseFolder); renderer ne zadaje putanju.
+        if (isFolderSetting(key)) throw new Error(`Podešavanje "${key}" se zadaje samo izborom foldera u dijalogu.`);
         return [key, checkSetting(key, args[1])];
       },
       run(key, value) {
