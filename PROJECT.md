@@ -292,6 +292,11 @@ stavlja na mrežni disk.
   i `npm run pack`; rezultat je u `release/`.
 - CI: GitHub Actions, matrica `windows-latest` + `ubuntu-latest`, pokreće se na tag `v*`, gradi pakete i kači ih na
   GitHub Release. Po odluci korisnika oba repoa su javna, pa submodul ne traži poseban ključ ili token.
+  `.gitmodules` koristi HTTPS. PR-ovi, `main` i ručno pokretanje rade iste provere i čuvaju pakete kao artefakte
+  14 dana. Na Linuxu smoke koristi Xvfb; na Windowsu normalan prozor. Proverava se i stvarni AppImage odnosno
+  raspakovan Windows paket i portable, uključujući `node:sqlite`, migracije i izvoz posle restarta.
+  Tag mora da bude tačno `v<version iz package.json>`. Release se pravi kao nacrt tek kad oba sistema prođu,
+  zatim dobija tri paketa i objavljuje se. Pristup za pisanje dobija samo posao za Release. Tag se ne pravi automatski.
 
 ## Faze
 

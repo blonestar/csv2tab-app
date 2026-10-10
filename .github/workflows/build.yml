@@ -1,0 +1,130 @@
+name: Provera i paketi
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paketi-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  build:
+    name: Provera (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      CSV2TAB_SCREENSHOTS: test-results/snimci
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - name: Verzija taga mora da odgovara aplikaciji
+        if: github.ref_type == 'tag'
+        run: |
+          node --input-type=module -e 'import p from "./package.json" with { type: "json" }; if (process.env.GITHUB_REF_NAME !== `v${p.version}`) throw new Error("Tag ne odgovara verziji aplikacije");'
+      - name: Zavisnosti
+        run: |
+          npm ci
+          node node_modules/electron/install.js
+          npm run web:install
+          mkdir -p test-results
+      - name: Build i testovi
+        run: |
+          npm run build
+          npm test
+          npm run web:build
+      - name: Linux ekran i AppImage podrška
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libfuse2t64
+      - name: Smoke (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a env -u ELECTRON_RUN_AS_NODE npm run test:smoke | tee test-results/smoke.log
+      - name: Smoke (Windows)
+        if: runner.os == 'Windows'
+        run: npm run test:smoke | tee test-results/smoke.log
+      - name: AppImage i provera paketa
+        if: runner.os == 'Linux'
+        run: |
+          npm run build:linux
+          xvfb-run -a env -u ELECTRON_RUN_AS_NODE npm run test:package -- release/*.AppImage | tee test-results/package.log
+      - name: NSIS, portable i provera paketa
+        if: runner.os == 'Windows'
+        run: |
+          npm run build:win
+          npm run test:package -- release/win-unpacked/csv2tab-app.exe | tee test-results/package.log
+          npm run test:package -- release/*-portable.exe | tee test-results/portable.log
+      - name: Sačuvaj pakete
+        uses: actions/upload-artifact@v7
+        with:
+          name: paketi-${{ runner.os }}
+          path: |
+            release/*.AppImage
+            release/*-setup.exe
+            release/*-portable.exe
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+      - name: Sačuvaj izveštaje i snimke
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: provere-${{ runner.os }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  release:
+    name: Objavi izdanje
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: paketi-*
+          path: paketi
+          merge-multiple: true
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft' 2>/dev/null || true)
+          if [ "$draft" = false ]; then
+            echo "Izdanje je već objavljeno."
+            exit 0
+          fi
+          if [ -z "$draft" ]; then
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes --draft
+          fi
+          gh release upload "$RELEASE_TAG" paketi/*.AppImage paketi/*-setup.exe paketi/*-portable.exe --clobber
+          gh release edit "$RELEASE_TAG" --draft=false

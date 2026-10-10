@@ -38,3 +38,8 @@ npm run test:package -- "release/csv2tab-app-0.8.0-linux-x86_64.AppImage"
 Paketi su u `release/`. AppImage je proveren na Fedori (potreban je FUSE 2); Windows instalacija, nadogradnja i
 deinstalacija još čekaju ručnu proveru. Portable koristi istu lokalnu bazu kao instalirana aplikacija.
 Ikonice su izvedene iz postojećeg web logoa i priložene u repou; ponovno generisanje (`npm run icons`) traži ImageMagick.
+
+GitHub Actions proverava PR-ove i `main` na Linuxu i Windowsu, a paketi i izveštaji su među artefaktima provere.
+Tag `v<verzija iz package.json>` pokreće izdanje sa AppImage, NSIS i portable paketom na GitHub Release, tek kada
+obe provere prođu. Tag se pravi posle merge-a u `main`, na zahtev korisnika. Oba repoa su javna; submodul se
+preuzima preko HTTPS-a bez dodatnih CI tajni. Paketi su bez potpisa i automatsko ažuriranje nije uvedeno.
