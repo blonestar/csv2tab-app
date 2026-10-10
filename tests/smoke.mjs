@@ -977,10 +977,13 @@ try {
   await waitSaved();
   assert.equal((await jobsApi()).total, beforeArguments + 2);
   const secondInstance = (file) => new Promise((resolve, reject) => {
-    const child = spawn(electron, [root, `--user-data-dir=${userData}`, file], { cwd: srcDir, env, stdio: 'ignore' });
+    // Playwright dodaje --no-sandbox prvoj instanci; ista testna zastavica je potrebna drugoj na CI runneru.
+    const child = spawn(electron, [root, '--no-sandbox', `--user-data-dir=${userData}`, file], { cwd: srcDir, env, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk).slice(-8192); });
     const timeout = setTimeout(() => { child.kill(); reject(new Error('Druga instanca nije izašla za 30 s.')); }, 30000);
     child.on('error', (e) => { clearTimeout(timeout); reject(e); });
-    child.on('exit', (code) => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error(`Druga instanca: exit ${code}`)); });
+    child.on('exit', (code, signal) => { clearTimeout(timeout); code === 0 ? resolve() : reject(new Error(`Druga instanca: exit ${code}, signal ${signal}\n${stderr}`)); });
   });
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].minimize());
   await secondInstance('Drugi proces.csv'); // relativna putanja razrešava se u folderu drugog procesa
