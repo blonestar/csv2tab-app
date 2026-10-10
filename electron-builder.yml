@@ -1,0 +1,54 @@
+appId: com.blonestar.csv2tab
+productName: csv2tab-app
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**
+  - '!dist/**/*.map'
+  - migrations/*.sql
+  - package.json
+extraResources:
+  - from: build/icons/256x256.png
+    to: icon.png
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  oneClick: true
+  perMachine: false
+  allowElevation: false
+  deleteAppDataOnUninstall: false
+  include: build/installer.nsh
+  artifactName: '${name}-${version}-windows-${arch}-setup.${ext}'
+portable:
+  artifactName: '${name}-${version}-windows-${arch}-portable.${ext}'
+appImage:
+  executableArgs: []
+linux:
+  syncDesktopName: true
+  icon: build/icons
+  category: Office
+  target:
+    - target: AppImage
+      arch: [x64]
+  artifactName: '${name}-${version}-linux-${arch}.${ext}'
+  fileAssociations:
+    - ext: csv
+      mimeType: text/csv
+    - ext: ods
+      mimeType: application/vnd.oasis.opendocument.spreadsheet
+    - ext: xlsx
+      mimeType: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+    - ext: tab
+      mimeType: application/x-csv2tab-wt
+  desktop:
+    entry:
+      Name: csv2tab
+      Comment: Krojne liste u WT Input format
+      Categories: Office;
