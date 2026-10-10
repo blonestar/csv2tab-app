@@ -54,8 +54,11 @@ describe('prazna baza', () => {
     expect(count(db, 'SELECT count(*) AS n FROM materials')).toBe(catalog.materials.length);
     expect(count(db, 'SELECT count(*) AS n FROM edge_bands')).toBe(catalog.edgeBands.length);
     expect(count(db, "SELECT count(*) AS n FROM materials WHERE source <> 'builtin'")).toBe(0);
-    const tables = db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[];
-    expect(tables.map((t) => t.name)).not.toContain('jobs');
+    const tables = (db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name);
+    expect(tables).toEqual(expect.arrayContaining(['jobs', 'job_parts', 'exports']));
+    // mapiranja su faza 5
+    expect(tables).not.toContain('material_map');
+    expect(tables).not.toContain('column_maps');
   });
   it('koristi WAL i uključene strane ključeve', () => {
     const db = open();
@@ -122,6 +125,35 @@ describe('migracije', () => {
   it('odbija pogrešan redosled ili ime migracije', () => {
     expect(() => openDatabase({ file: file(), migrationsDir: migrationsDir({ '0002_a.sql': 'SELECT 1;' }) })).toThrow(/redosled/);
     expect(() => openDatabase({ file: file(), migrationsDir: migrationsDir({ 'init.sql': 'SELECT 1;' }) })).toThrow(/redosled/);
+  });
+});
+
+describe('migracija 0001 -> 0002 (poslovi)', () => {
+  it('podešavanja i katalog iz šeme 1 prežive, kopija šeme 1 je napravljena, tabele poslova postoje', () => {
+    // prava prva migracija, bez druge
+    const only1 = mkdtempSync(join(dir, 'real1-'));
+    writeFileSync(join(only1, '0001_init.sql'), readFileSync(join(REAL_MIGRATIONS, '0001_init.sql')));
+    const old = openDatabase({ file: file(), migrationsDir: only1, catalog });
+    expect(old.schemaVersion).toBe(1);
+    setSetting(old.sqlite, 'theme', 'dark');
+    old.sqlite.prepare("INSERT INTO materials (source, code, name, sheet_w, sheet_h, thickness, grain) VALUES ('user', 'MOJ', 'Moj materijal', 2800, 2070, 18, 1)").run();
+    old.close();
+
+    const db = open();
+    expect(db.schemaVersion).toBe(2);
+    expect(db.backupPath).toBe(`${file()}.v1.bak`);
+    expect(getSetting(db.sqlite, 'theme')).toBe('dark');
+    expect(count(db, 'SELECT count(*) AS n FROM materials')).toBe(catalog.materials.length + 1);
+    expect(count(db, 'SELECT count(*) AS n FROM edge_bands')).toBe(catalog.edgeBands.length);
+    expect(count(db, 'SELECT count(*) AS n FROM jobs')).toBe(0);
+    const copy = new DatabaseSync(db.backupPath!, { readOnly: true });
+    expect(copy.prepare('PRAGMA user_version').get()).toMatchObject({ user_version: 1 });
+    expect(copy.prepare("SELECT name FROM sqlite_master WHERE name = 'jobs'").all()).toEqual([]);
+    expect(copy.prepare("SELECT value FROM settings WHERE key = 'theme'").get()).toMatchObject({ value: '"dark"' });
+    copy.close();
+    // ponovno otvaranje: nema nove kopije ni izmena
+    db.close();
+    expect(open().backupPath).toBeNull();
   });
 });
 
