@@ -5,8 +5,8 @@ binarni WT Input `.tab`. Nastala je iz web aplikacije [csv2tab](https://github.c
 jezgro konverzije, ali ima **svoj interfejs i svoju bazu**. Ovaj dokument je plan cele aplikacije. Pravila rada za
 agente su u `AGENTS.md`.
 
-Stanje: **postavljen je samo kostur repoa** (ovaj plan, `AGENTS.md`, `package.json`, submodul `web/`). Koda još nema.
-Kad se faza završi, označi je u odeljku [Faze](#faze).
+Stanje: **faza 1 (osnova) je gotova**: prozor sa bočnom trakom, `app://` protokol, most sa probnom operacijom i jezgro
+preko `@core`. Baze, poslova i uvoza još nema. Kad se faza završi, označi je u odeljku [Faze](#faze).
 
 ## Cilj
 
@@ -83,6 +83,8 @@ csv2tab-app/
 
 - **Electron 44** (Node 24), TypeScript, Vite. Alat za build tri cilja (main, preload, renderer) bira se u fazi 1:
   `electron-vite` ako radi sa aktuelnim Vite-om, inače Vite za renderer i esbuild za main i preload.
+  **Odlučeno u fazi 1:** `electron-vite` 5 podržava Vite do 7, a aktuelni je Vite 8 (npm odbija instalaciju), pa se
+  koristi Vite 8 za renderer i esbuild za main (ESM) i preload (jedan CommonJS fajl, `.cjs`). Skripte su u `scripts/`.
 - **React** za interfejs. Aplikacija ima liste, tabele sa izmenom ćelija i forme za podešavanja, pa ručni DOM kao u
   webu (`main.ts` ima 1400 redova) ne bi bio održiv.
 - **SQLite preko ugrađenog `node:sqlite`**, bez nativnog modula. Provereno 10. 10. 2026. na Linuxu: Electron 44.7.0,
@@ -186,10 +188,11 @@ Nacrt šeme (konačan oblik se utvrđuje u fazi 2):
 Svaka faza je posebna grana iz `main`-a i poseban PR.
 
 - [x] **0. Kostur** (urađeno pri postavljanju): repo, submodul, plan, pravila.
-- [ ] **1. Osnova**: Electron, TypeScript, build, `app://` protokol, bezbednosna podešavanja, most sa jednom
+- [x] **1. Osnova**: Electron, TypeScript, build, `app://` protokol, bezbednosna podešavanja, most sa jednom
       probnom operacijom, prozor sa bočnom trakom, uvoz jezgra preko `@core`. *Gotovo kad:* `npm run dev` otvara
-      prozor, renderer jezgrom pretvara fixture iz `web/tests/fixtures/` u bajt-identičan `.tab`, a `npm run build`
-      daje pokretljiv nespakovan build.
+      prozor, renderer jezgrom pretvara CSV, ODS i XLSX fixture iz `web/tests/fixtures/` u iste `.tab` bajtove (a
+      referentni `.tab` fajlovi prolaze čitanje pa pisanje bajt-identično), a `npm run build` daje pokretljiv
+      nespakovan build.
 - [ ] **2. Baza**: `node:sqlite`, migracije, `settings`, punjenje kataloga, IPC operacije sa proverom argumenata.
       *Gotovo kad:* testovi baze prolaze (prazna baza, migracija sa prethodne šeme, odbijanje novije baze), a
       podešavanje upisano kroz interfejs preživljava restart. Proveriti `node:sqlite` na Windowsu.
