@@ -4,6 +4,9 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { APP_ORIGIN, type IpcChannel } from '../shared/api';
 import { appOperations } from './operations/app';
 import { catalogOperations } from './operations/catalog';
+import { compareOperations } from './operations/compare';
+import { exportOperations } from './operations/export';
+import { filesOperations } from './operations/files';
 import { settingsOperations } from './operations/settings';
 import type { IpcContext, Operation } from './operations/types';
 
@@ -14,6 +17,9 @@ export function registerIpc(ctx: IpcContext): void {
     ...appOperations(ctx),
     ...settingsOperations(ctx),
     ...catalogOperations(ctx),
+    ...filesOperations(ctx),
+    ...exportOperations(ctx),
+    ...compareOperations(ctx),
   };
 
   const trusted = (e: IpcMainInvokeEvent) => {

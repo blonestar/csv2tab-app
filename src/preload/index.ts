@@ -14,6 +14,18 @@ const api: Api = {
   catalog: {
     get: () => ipcRenderer.invoke('catalog.get'),
   },
+  files: {
+    open: (purpose) => ipcRenderer.invoke('files.open', purpose),
+    chooseFolder: (key) => ipcRenderer.invoke('files.chooseFolder', key),
+  },
+  export: {
+    check: (items) => ipcRenderer.invoke('export.check', items),
+    write: (items, overwrite) => ipcRenderer.invoke('export.write', items, overwrite),
+  },
+  compare: {
+    open: (payload) => ipcRenderer.invoke('compare.open', payload),
+    get: (id) => ipcRenderer.invoke('compare.get', id),
+  },
 };
 
 contextBridge.exposeInMainWorld('api', api);

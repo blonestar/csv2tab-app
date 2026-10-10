@@ -1,5 +1,5 @@
 import type { AppDatabase } from '../db';
-import type { IpcChannel, IpcOperations } from '../../shared/api';
+import type { ComparePayload, IpcChannel, IpcOperations } from '../../shared/api';
 
 export interface Operation<K extends IpcChannel> {
   /** Baca grešku ako argumenti nemaju očekivani oblik; inače ih vraća sa tačnim tipom. */
@@ -15,6 +15,11 @@ export interface IpcContext {
   db: AppDatabase;
   /** Primenjuje podešavanje na samu aplikaciju (npr. temu prozora). */
   applySetting(key: string, value: unknown): void;
+  /** Prozori poređenja; podaci stoje u glavnom procesu, prozor dobija samo id u adresi. */
+  windows: {
+    openCompare(payload: ComparePayload): void;
+    getCompare(id: string): ComparePayload | undefined;
+  };
 }
 
 export function noArgs(args: unknown[]): [] {

@@ -206,7 +206,7 @@ describe('podešavanja', () => {
     db.close();
     db = open();
     expect(getSetting(db.sqlite, 'theme')).toBe('dark');
-    expect(getAllSettings(db.sqlite)).toEqual({ theme: 'dark' });
+    expect(getAllSettings(db.sqlite)).toEqual({ theme: 'dark', wtFolder: '' });
   });
   it('odbija pogrešan tip i nepoznatu vrednost, a stara vrednost ostaje', () => {
     const db = open();
