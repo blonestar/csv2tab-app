@@ -39,15 +39,33 @@ export function updateTestUrl(env: NodeJS.ProcessEnv, packaged: boolean): string
   return env[UPDATE_TEST_URL_ENV] || undefined;
 }
 
+/**
+ * AppImage je samo onaj u kom je program zaista pokrenut. APPIMAGE i APPDIR mogu da stignu iz tuđeg pokretača
+ * (npr. program pokrenut iz drugog AppImage-a), pa se proverava i da izvršni fajl leži u APPDIR.
+ */
+export function isOwnAppImage(env: NodeJS.ProcessEnv, execPath: string): boolean {
+  return !!env.APPIMAGE && !!env.APPDIR && execPath.startsWith(`${env.APPDIR}/`);
+}
+
 /** Varijanta po okruženju. U test režimu sa adresom servera tretira se kao podržana (appimage na Linuxu, nsis na Windowsu). */
-export function chooseVariant({ platform, packaged, env }: { platform: string; packaged: boolean; env: NodeJS.ProcessEnv }): UpdateVariant {
+export function chooseVariant({
+  platform,
+  packaged,
+  env,
+  execPath,
+}: {
+  platform: string;
+  packaged: boolean;
+  env: NodeJS.ProcessEnv;
+  execPath: string;
+}): UpdateVariant {
   if (!packaged) {
     if (!updateTestUrl(env, packaged)) return 'unsupported';
     if (platform === 'win32') return 'nsis';
     return platform === 'linux' ? 'appimage' : 'unsupported';
   }
   if (platform === 'win32') return env.PORTABLE_EXECUTABLE_FILE ? 'portable' : 'nsis';
-  if (platform === 'linux') return env.APPIMAGE ? 'appimage' : 'unsupported';
+  if (platform === 'linux') return isOwnAppImage(env, execPath) ? 'appimage' : 'unsupported';
   return 'unsupported';
 }
 
@@ -78,6 +96,8 @@ export interface UpdateDeps {
   send(state: UpdateState): void;
   /** Čuva sve nesačuvane izmene i zatvara prozor pre instalacije; false ako korisnik odustane. */
   prepareInstall(): Promise<boolean>;
+  /** Poziva se kad instalacija ne uspe posle prepareInstall: prozor se vraća u normalno stanje (zatvara se opet uz pitanje). */
+  abortInstall(): void;
   log(message: string, error: unknown): void;
 }
 
@@ -173,6 +193,7 @@ export function createUpdateController(deps: UpdateDeps): UpdateController {
       await deps.driver.install(fileName);
     } catch (error) {
       deps.log('Instalacija ažuriranja nije uspela.', error);
+      deps.abortInstall();
       setPhase({ kind: 'error', message: INSTALL_FAILED });
       throw new UpdateFailure(INSTALL_FAILED);
     }

@@ -52,16 +52,32 @@ describe('raspored provere', () => {
 describe('izbor varijante', () => {
   const env = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => ({ ...extra });
   const test = { CSV2TAB_TEST: '1', CSV2TAB_TEST_UPDATE_URL: 'http://127.0.0.1:9/' };
-  const v = (platform: string, packaged: boolean, extra: Record<string, string> = {}): UpdateVariant =>
-    chooseVariant({ platform, packaged, env: env(extra) });
+  // izvršni fajl pokrenutog programa; u pravom AppImage-u leži u APPDIR
+  const OWN_EXEC = '/tmp/.mount_csv2tab/csv2tab-app';
+  const OWN = { APPIMAGE: '/opt/csv2tab-app.AppImage', APPDIR: '/tmp/.mount_csv2tab' };
+  const v = (platform: string, packaged: boolean, extra: Record<string, string> = {}, execPath = OWN_EXEC): UpdateVariant =>
+    chooseVariant({ platform, packaged, env: env(extra), execPath });
 
   it('upakovana Windows aplikacija: nsis, a portable kad postoji PORTABLE_EXECUTABLE_FILE', () => {
     expect(v('win32', true)).toBe('nsis');
     expect(v('win32', true, { PORTABLE_EXECUTABLE_FILE: 'C:\\Programi\\csv2tab-app.exe' })).toBe('portable');
   });
-  it('upakovani Linux: appimage kad postoji APPIMAGE, inače nepodržano', () => {
-    expect(v('linux', true, { APPIMAGE: '/opt/csv2tab-app.AppImage' })).toBe('appimage');
+  it('upakovani Linux: appimage samo kad je program iz svog AppImage-a, inače nepodržano', () => {
+    expect(v('linux', true, OWN)).toBe('appimage');
     expect(v('linux', true)).toBe('unsupported');
+  });
+  it('nasleđen tuđi APPIMAGE/APPDIR ne čini program AppImage-om', () => {
+    // program pokrenut iz drugog AppImage-a: promenljive stižu od pokretača, a izvršni fajl je van APPDIR
+    const foreign = { APPIMAGE: '/home/korisnik/T3-Code.AppImage', APPDIR: '/tmp/.mount_T3' };
+    expect(v('linux', true, foreign, '/usr/lib/csv2tab-app/csv2tab-app')).toBe('unsupported');
+    // kad je izvršni fajl zaista u APPDIR, program jeste pokrenut iz tog AppImage-a
+    expect(v('linux', true, foreign, '/tmp/.mount_T3/csv2tab-app')).toBe('appimage');
+    expect(v('linux', true, OWN, '/usr/lib/csv2tab-app/csv2tab-app')).toBe('unsupported');
+  });
+  it('appimage zahteva obe promenljive i izvršni fajl unutar APPDIR (ne samo prefiks imena)', () => {
+    expect(v('linux', true, { APPIMAGE: OWN.APPIMAGE }, OWN_EXEC)).toBe('unsupported');
+    expect(v('linux', true, { APPDIR: OWN.APPDIR }, OWN_EXEC)).toBe('unsupported');
+    expect(v('linux', true, OWN, '/tmp/.mount_csv2tab2/csv2tab-app')).toBe('unsupported');
   });
   it('macOS i ostalo su uvek nepodržani', () => {
     expect(v('darwin', true)).toBe('unsupported');
@@ -73,14 +89,14 @@ describe('izbor varijante', () => {
     expect(v('linux', false, { CSV2TAB_TEST_UPDATE_URL: 'http://x/' })).toBe('unsupported');
   });
   it('test adresa uz CSV2TAB_TEST=1 čini nespakovanu aplikaciju podržanom: appimage na Linuxu, nsis na Windowsu', () => {
-    expect(chooseVariant({ platform: 'linux', packaged: false, env: test })).toBe('appimage');
-    expect(chooseVariant({ platform: 'win32', packaged: false, env: test })).toBe('nsis');
-    expect(chooseVariant({ platform: 'darwin', packaged: false, env: test })).toBe('unsupported');
+    expect(chooseVariant({ platform: 'linux', packaged: false, env: test, execPath: OWN_EXEC })).toBe('appimage');
+    expect(chooseVariant({ platform: 'win32', packaged: false, env: test, execPath: 'C:\\csv2tab.exe' })).toBe('nsis');
+    expect(chooseVariant({ platform: 'darwin', packaged: false, env: test, execPath: '/Applications/x' })).toBe('unsupported');
   });
   it('test adresa se ignoriše u upakovanoj aplikaciji', () => {
     expect(updateTestUrl(test as NodeJS.ProcessEnv, true)).toBeUndefined();
-    expect(chooseVariant({ platform: 'linux', packaged: true, env: test })).toBe('unsupported');
-    expect(chooseVariant({ platform: 'win32', packaged: true, env: { ...test, PORTABLE_EXECUTABLE_FILE: 'x.exe' } })).toBe('portable');
+    expect(chooseVariant({ platform: 'linux', packaged: true, env: test, execPath: OWN_EXEC })).toBe('unsupported');
+    expect(chooseVariant({ platform: 'win32', packaged: true, env: { ...test, PORTABLE_EXECUTABLE_FILE: 'x.exe' }, execPath: 'x.exe' })).toBe('portable');
   });
   it('test adresa se ignoriše kad test režim nije aktivan', () => {
     expect(updateTestUrl({ CSV2TAB_TEST_UPDATE_URL: 'http://x/' } as NodeJS.ProcessEnv, false)).toBeUndefined();
@@ -98,6 +114,7 @@ function harness(opts: { variant?: UpdateVariant; driver?: Partial<UpdateDriver>
   const sent: UpdateState[] = [];
   const logs: unknown[] = [];
   const prepares: number[] = [];
+  const aborts: number[] = [];
   const calls = { check: 0, download: [] as string[], install: [] as (string | undefined)[] };
   const driver: UpdateDriver = {
     check: async () => {
@@ -126,6 +143,7 @@ function harness(opts: { variant?: UpdateVariant; driver?: Partial<UpdateDriver>
       prepares.push(now);
       return opts.prepare ?? true;
     },
+    abortInstall: () => aborts.push(now),
     log: (message, error) => logs.push([message, error]),
   });
   return {
@@ -135,6 +153,7 @@ function harness(opts: { variant?: UpdateVariant; driver?: Partial<UpdateDriver>
     sent,
     logs,
     prepares,
+    aborts,
     setNow: (t: number) => (now = t),
     /** Čeka da pozadinski posao (preuzimanje) završi. */
     settle: () => new Promise((r) => setTimeout(r, 0)),
@@ -289,6 +308,22 @@ describe('preuzimanje i instalacija', () => {
     await h.settle();
     await expect(h.ctl.install()).rejects.toThrow('Instalacija nije uspela.');
     expect(h.ctl.state().phase).toEqual({ kind: 'error', message: 'Instalacija nije uspela. Pokušajte ponovo ili preuzmite program ponovo.' });
+    // prozor je već prošao čuvanje; posle neuspeha mora da se vrati u stanje sa pitanjem pri zatvaranju
+    expect(h.aborts.length).toBe(1);
+  });
+  it('odustajanje pri čuvanju i uspešna instalacija ne pozivaju prekid', async () => {
+    const h = harness({ driver: { check: async () => '0.9.0' }, prepare: false });
+    await h.ctl.check();
+    await h.ctl.download();
+    await h.settle();
+    await h.ctl.install();
+    expect(h.aborts).toEqual([]);
+    const ok = harness({ driver: { check: async () => '0.9.0' } });
+    await ok.ctl.check();
+    await ok.ctl.download();
+    await ok.settle();
+    await ok.ctl.install();
+    expect(ok.aborts).toEqual([]);
   });
 });
 

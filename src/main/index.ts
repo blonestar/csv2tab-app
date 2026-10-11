@@ -289,7 +289,7 @@ app.whenReady().then(() => {
   }
   const db = database;
   // Ažuriranje: varijanta po okruženju; u test režimu adresa lokalnog servera (vidi update.ts).
-  const variant = chooseVariant({ platform: process.platform, packaged: app.isPackaged, env: process.env });
+  const variant = chooseVariant({ platform: process.platform, packaged: app.isPackaged, env: process.env, execPath: process.execPath });
   const update = createUpdateController({
     variant,
     currentVersion: app.getVersion(),
@@ -306,6 +306,9 @@ app.whenReady().then(() => {
     readSettings: () => ({ updateInterval: getSetting(db.sqlite, 'updateInterval'), updateOnStartup: getSetting(db.sqlite, 'updateOnStartup') }),
     send: sendUpdateState,
     prepareInstall: () => (mainWindow && !mainWindow.isDestroyed() ? prepareClose(mainWindow) : Promise.resolve(true)),
+    abortInstall: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) closeReady.delete(mainWindow);
+    },
     log: (message, error) => console.error(message, error),
   });
   registerIpc({ devUrl, testMode, db: database, dbOptions: dbOptions(), lock, applySetting, windows, update });
