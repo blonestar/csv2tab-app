@@ -82,7 +82,7 @@ export function UpdateSection() {
 
       <fieldset className="group">
         <legend>Provera novih verzija</legend>
-        <p className="muted small">Učestalost određuje koliko često se program sam proverava da li postoji novije izdanje. Checkbox ispod ne zavisi od učestalosti: ako je uključen, provera ide pri svakom pokretanju.</p>
+        <p className="muted small">Učestalost određuje koliko često program sam proverava da li postoji novije izdanje. Checkbox ispod ne zavisi od učestalosti: ako je uključen, provera ide pri svakom pokretanju.</p>
         {UPDATE_INTERVALS.map((i) => (
           <label key={i} className="choice">
             <input
