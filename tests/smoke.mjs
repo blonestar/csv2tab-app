@@ -52,7 +52,7 @@ try {
     node: typeof require + typeof process,
     ipc: typeof window.ipcRenderer,
   }));
-  assert.deepEqual(surface, { api: ['app', 'backup', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'memory', 'settings'], node: 'undefinedundefined', ipc: 'undefined' });
+  assert.deepEqual(surface, { api: ['app', 'backup', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'memory', 'settings', 'update'], node: 'undefinedundefined', ipc: 'undefined' });
   const info = await page.evaluate(() => window.api.app.info());
   assert.equal(info.testMode, true);
   assert.match(info.electron, /^44\./);
@@ -373,7 +373,7 @@ try {
   assert.equal(cmpSum.same, '3');
   assert.deepEqual(await cmp.evaluate(() => ({ node: typeof require + typeof process, api: Object.keys(window.api).sort() })), {
     node: 'undefinedundefined',
-    api: ['app', 'backup', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'memory', 'settings'],
+    api: ['app', 'backup', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'memory', 'settings', 'update'],
   });
   assert.equal(await cmp.locator('.diff-table tr.changed').count(), 11);
   console.log('prozor poređenja:', JSON.stringify(cmpSum));

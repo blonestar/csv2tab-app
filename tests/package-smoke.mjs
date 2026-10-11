@@ -22,9 +22,17 @@ const old = new DatabaseSync(join(userData, 'csv2tab.db'));
 old.exec(readFileSync(join(root, 'migrations/0001_init.sql'), 'utf8'));
 old.exec('PRAGMA user_version = 1');
 old.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('wtFolder', JSON.stringify(wt));
+// Bez automatske provere ažuriranja pri pokretanju (inače bi program posle 5 s zvao GitHub).
+old.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('updateOnStartup', 'false');
+old.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('updateInterval', JSON.stringify('never'));
 old.close();
 const env = { ...process.env, CSV2TAB_TEST: '1', CSV2TAB_DEV_URL: 'http://127.0.0.1:1', CSV2TAB_TEST_IMPORT: join(temp, 'nema.csv') };
 delete env.ELECTRON_RUN_AS_NODE;
+// Varijanta ažuriranja zavisi samo od načina pokretanja: AppImage ga sam postavlja, a raspakovan program ga nema.
+delete env.APPIMAGE;
+delete env.PORTABLE_EXECUTABLE_FILE;
+delete env.PORTABLE_EXECUTABLE_DIR;
+const expectedVariant = executablePath.endsWith('.AppImage') ? 'appimage' : process.platform === 'win32' ? 'nsis' : 'unsupported';
 const displayArgs = process.platform === 'linux' ? ['--ozone-platform=x11'] : [];
 const launch = (files = []) => _electron.launch({ executablePath, args: [`--user-data-dir=${userData}`, ...displayArgs, ...files], env, timeout: 60000, colorScheme: null });
 let app;
@@ -40,6 +48,11 @@ try {
   const info = await page.evaluate(() => window.api.app.info());
   assert.equal(info.testMode, false);
   assert.equal(info.schemaVersion, 3);
+  // electron-updater se učitava iz paketa; ne zove se provera (išla bi na GitHub)
+  assert.equal(info.updateVariant, expectedVariant);
+  const update = await page.evaluate(() => window.api.update.state());
+  assert.equal(update.currentVersion, info.appVersion);
+  assert.equal(update.variant, expectedVariant);
   assert.equal(await page.evaluate(() => typeof window.__csv2tab), 'undefined');
   assert.deepEqual(await app.evaluate(({ app }) => ({ packaged: app.isPackaged, name: app.getName(), userData: app.getPath('userData') })), { packaged: true, name: 'csv2tab-app', userData });
   await page.click('[data-testid=export]');

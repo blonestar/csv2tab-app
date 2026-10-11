@@ -11,7 +11,7 @@ import { getAllSettings, getSetting, setSetting } from '../src/main/db/settings'
 import { settingsOperations } from '../src/main/operations/settings';
 import type { IpcContext } from '../src/main/operations/types';
 import { EDGE_RULE_LIMITS, edgeRulesProblem, sameEdgeRules } from '../src/shared/edgeRules';
-import { SETTINGS, checkSetting, isFolderSetting, isSettingKey } from '../src/shared/settings';
+import { SETTINGS, UPDATE_INTERVALS, checkSetting, isFolderSetting, isSettingKey } from '../src/shared/settings';
 
 let dir: string;
 let db: AppDatabase;
@@ -104,6 +104,38 @@ describe('ostala nova podešavanja', () => {
     expect(getAllSettings(db.sqlite)).toMatchObject({ edgeRules: rules, decorRule: false, mergeDefault: false });
     db.sqlite.prepare("UPDATE settings SET value = '[{\"a\":1,\"b\":1,\"code\":4},{\"a\":1,\"b\":1,\"code\":5}]' WHERE key = 'edgeRules'").run();
     expect(sameEdgeRules(getSetting(db.sqlite, 'edgeRules'), DEFAULT_EDGE_RULES)).toBe(true);
+  });
+});
+
+describe('podešavanja ažuriranja', () => {
+  it('učestalost: podrazumevano jednom nedeljno, a prihvata samo tačne vrednosti', () => {
+    expect(UPDATE_INTERVALS).toEqual(['daily', 'weekly', 'monthly', 'never']);
+    expect(isSettingKey('updateInterval')).toBe(true);
+    expect(isFolderSetting('updateInterval')).toBe(false);
+    expect(SETTINGS.updateInterval.default).toBe('weekly');
+    for (const v of UPDATE_INTERVALS) expect(checkSetting('updateInterval', v)).toBe(v);
+    for (const bad of ['yearly', 'Weekly', '', 1, null, undefined, {}, ['daily']]) expect(() => checkSetting('updateInterval', bad), String(bad)).toThrow();
+  });
+  it('provera pri pokretanju je logičko podešavanje, podrazumevano uključeno', () => {
+    expect(SETTINGS.updateOnStartup.default).toBe(true);
+    expect(checkSetting('updateOnStartup', false)).toBe(false);
+    for (const bad of ['da', 1, 0, null, undefined]) expect(() => checkSetting('updateOnStartup', bad), String(bad)).toThrow();
+  });
+  it('IPC odbija neispravnu učestalost, a prihvata ispravnu', () => {
+    const ops = settingsOperations({ db } as unknown as IpcContext);
+    expect(ops['settings.set'].validate(['updateInterval', 'never'])).toEqual(['updateInterval', 'never']);
+    expect(() => ops['settings.set'].validate(['updateInterval', 'yearly'])).toThrow();
+    expect(() => ops['settings.set'].validate(['updateOnStartup', 'ne'])).toThrow();
+  });
+  it('vrednosti prežive ponovno otvaranje baze; oštećena učestalost vraća podrazumevanu', () => {
+    setSetting(db.sqlite, 'updateInterval', 'monthly');
+    setSetting(db.sqlite, 'updateOnStartup', false);
+    const file = db.file;
+    db.close();
+    db = openDatabase({ file, migrationsDir: resolve(import.meta.dirname, '../migrations') });
+    expect(getAllSettings(db.sqlite)).toMatchObject({ updateInterval: 'monthly', updateOnStartup: false });
+    db.sqlite.prepare("UPDATE settings SET value = '\"yearly\"' WHERE key = 'updateInterval'").run();
+    expect(getSetting(db.sqlite, 'updateInterval')).toBe('weekly');
   });
 });
 
