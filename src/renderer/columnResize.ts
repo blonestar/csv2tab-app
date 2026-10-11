@@ -125,7 +125,13 @@ function attach(table: HTMLTableElement, id: string): () => void {
       drag = null;
       document.body.classList.remove('col-resizing');
       table.style.cursor = '';
-      if (moved) store(id, widths);
+      if (moved) {
+        store(id, widths);
+        // klik koji sledi posle puštanja miša ne sme da aktivira dugme u zaglavlju (sortiranje)
+        const swallow = new AbortController();
+        window.addEventListener('click', (c) => c.stopPropagation(), { capture: true, once: true, signal: swallow.signal });
+        setTimeout(() => swallow.abort(), 0);
+      }
     };
     window.addEventListener('pointermove', (m) => {
       // kolona koja je već uža od najmanje širine (oznaka upozorenja) ne skače na nju
