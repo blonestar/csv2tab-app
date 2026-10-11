@@ -27,7 +27,8 @@ const userData = mkdtempSync(join(tmpdir(), 'csv2tab-smoke-'));
 const extraDirs = [];
 // colorScheme: null — Playwright inače nameće "light" i prefers-color-scheme ne bi pratio nativeTheme.
 // Wayland ne dozvoljava pouzdan programski fokus/položaj; automatizacija koristi X11 na zadatom DISPLAY-u.
-const displayArgs = process.platform === 'linux' ? ['--ozone-platform=x11'] : [];
+// Faktor 1: sa razlomljenim skaliranjem Electron na X11 zaokružuje veličinu prozora pri svakom pokretanju.
+const displayArgs = process.platform === 'linux' ? ['--ozone-platform=x11', '--force-device-scale-factor=1'] : [];
 const launch = (files = []) => _electron.launch({ executablePath: electron, args: [root, `--user-data-dir=${userData}`, ...displayArgs, ...files], env, timeout: 30000, colorScheme: null });
 const isDark = (page) => page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches);
 const bodyBg = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
@@ -1029,11 +1030,12 @@ try {
   assert.equal((await jobsApi()).total, beforeArguments + 3);
   await waitSaved();
   const finalTotal = (await jobsApi()).total;
-  const expectedBounds = await app.evaluate(({ BrowserWindow, screen }) => {
+  const expectedBounds = await app.evaluate(({ BrowserWindow }) => {
     const win = BrowserWindow.getAllWindows()[0];
-    const area = screen.getPrimaryDisplay().workArea;
-    // Položaj mora da stane i na mali CI ekran; vraćanje van ekrana već ima zasebne testove.
-    win.setBounds({ x: area.x + 20, y: area.y + 20, width: Math.min(980, area.width - 40), height: Math.min(650, area.height - 40) });
+    const current = win.getBounds();
+    // Novi okvir ostaje unutar položaja koji je menadžer prozora već prihvatio: staje i na mali CI ekran, a menadžer
+    // ga pri sledećem pokretanju ne pomera (npr. ispod panela). Vraćanje van ekrana već ima zasebne testove.
+    win.setBounds({ x: current.x + 20, y: current.y + 20, width: Math.min(980, current.width - 40), height: Math.min(650, current.height - 40) });
     return win.getNormalBounds();
   });
   await app.close();
