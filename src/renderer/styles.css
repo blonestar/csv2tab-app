@@ -166,6 +166,11 @@ h2 {
   font-weight: 500;
 }
 
+/* kolone kojima je širina promenjena mišem (columnResize.ts); u tabeli materijala bi odsecanje sakrilo padajuću listu */
+.grid[data-resized]:not(.materials-table) th,
+.grid[data-resized]:not(.materials-table) td { max-width: none; overflow: hidden; text-overflow: ellipsis; }
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; }
+
 /* ---------- posao ---------- */
 .btn {
   padding: 4px 12px;
