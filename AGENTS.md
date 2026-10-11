@@ -21,8 +21,10 @@ Plan aplikacije, arhitektura i faze su u `PROJECT.md`. Pročitaj ga pre rada i o
 
 ## Verzija (SemVer)
 
-Verzija aplikacije je `version` u `package.json`, nezavisna od verzije weba (`web/package.json`). Agent je **sam podiže**
-kad promena to zahteva. Format je `MAJOR.MINOR.PATCH`.
+Verzija aplikacije je `version` u `package.json`, nezavisna od verzije weba (`web/package.json`). Podiže se **samo
+pri izdanju**, kad korisnik kaže da se napravi izdanje, a ne u svakom PR-u. Format je `MAJOR.MINOR.PATCH`.
+
+Nivo se bira prema svemu što je spojeno u `main` od poslednjeg taga (`git log <poslednji tag>..main`); važi najviši:
 
 | Deo | Kada se podiže | Primeri |
 | --- | --- | --- |
@@ -31,15 +33,15 @@ kad promena to zahteva. Format je `MAJOR.MINOR.PATCH`.
 | **PATCH** | Ispravka ili sitnica | greška u dijalogu, ikonica, patch jezgra u submodulu |
 
 - **Dok je verzija `0.y.z`**, nekompatibilna promena podiže **MINOR**. Prelazak na `1.0.0` je odluka korisnika.
-- **Jedno podizanje po grani/PR-u**, u posebnom commitu na kraju grane (npr. `Verzija 0.2.0`). Proveri
-  `git diff main -- package.json` pre podizanja.
-- **Ne podiže se** za testove, dokumentaciju, refaktorisanje bez promene ponašanja, dev zavisnosti i CI, ni za
+- **Obični PR ne dira `version`.** Između dva izdanja se u `main` skuplja koliko god treba promena.
+- **Izdanje, na zahtev korisnika:** nova verzija je poslednji tag podignut za izabrani nivo. Ide u posebnom
+  commitu na `main` (`Verzija 0.2.0`), a zatim tag. Ako `package.json` već ima tu verziju, commit nije potreban.
+- Za nivo se ne računaju testovi, dokumentacija, refaktorisanje bez promene ponašanja, dev zavisnosti i CI, ni
   pomeranje submodula koje dira samo web UI.
 - Promena šeme baze ide uvek kao **nova migracija**; postojeće migracije se ne menjaju posle merge-a.
 - Komanda: `npm version <major|minor|patch> --no-git-tag-version`.
-- Git tag (`v0.2.0`) se pravi posle merge-a u `main` i samo na zahtev korisnika. Tag pokreće izdanje. Između dva
-  izdanja može da prođe više verzija.
-- U završnoj poruci navedi staru i novu verziju i zašto je izabran taj nivo.
+- Git tag (`v0.2.0`) se pravi samo na zahtev korisnika. Tag pokreće izdanje.
+- Pri izdanju navedi staru i novu verziju, zašto je izabran taj nivo i šta ulazi u izdanje.
 
 ## Pull request i merge
 
@@ -51,8 +53,8 @@ i lokalnu proveru iz odeljka „Provera pre predaje" i navodi stvarne rezultate 
 2. Kad provere prođu: javi korisniku da je PR spreman za probu i ponudi da pokreneš izgrađenu aplikaciju sa te
    grane (`npm run build`, pa `env -u ELECTRON_RUN_AS_NODE npm start`). Zatim **čekaj odobrenje**.
 3. Posle odobrenja: `gh pr merge <broj> --merge --delete-branch`, pa lokalno `git switch main && git pull`.
-4. Mehanički konflikt (verzija u `package.json`/`package-lock.json`, pokazivač submodula) agent rešava sam: spoji
-   `origin/main` u granu, ponovo podigne verziju, proveri build i testove, pushuje i vrati se na korak 1. Ako je
+4. Mehanički konflikt (npr. pokazivač submodula, `package-lock.json`) agent rešava sam: spoji
+   `origin/main` u granu, proveri build i testove, pushuje i vrati se na korak 1. Ako je
    spajanje donelo tuđe izmene u istim fajlovima, korisnik proba ponovo.
 5. Ako provera padne ili konflikt traži odluku o ponašanju: javi korisniku šta je palo.
 
@@ -61,7 +63,7 @@ i lokalnu proveru iz odeljka „Provera pre predaje" i navodi stvarne rezultate 
 - Merge commit (`--merge`), ne squash/rebase.
 - Draft PR se ne mergeuje.
 - **Izdanje je odvojena odluka.** Merge ne znači izdanje: korisnik često skupi više promena pa tek onda traži
-  izdanje. Tag se ne pravi i ne predlaže posle svakog merge-a.
+  izdanje. Verzija i tag se ne diraju i izdanje se ne predlaže posle svakog merge-a (vidi „Verzija").
 
 ## Provera pre predaje
 
