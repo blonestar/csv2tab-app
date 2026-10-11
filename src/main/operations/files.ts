@@ -1,6 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { getSetting, setSetting } from '../db/settings';
 import { openFile, pickFolder } from '../files';
+import { folderName } from '../fileNames';
 import { isFolderSetting, isSettingKey, type FolderSettingKey } from '../../shared/settings';
 import type { OpenPurpose } from '../../shared/api';
 import { noArgs, type IpcContext, type Operation } from './types';
@@ -30,7 +31,8 @@ export function filesOperations(ctx: IpcContext) {
         if (!folder) return null;
         if (!(await stat(folder)).isDirectory()) throw new Error('Izabrana putanja nije folder.');
         if (db !== ctx.db.sqlite || ctx.lock.restoring) throw new Error('Baza je promenjena; izaberite folder ponovo.');
-        return setSetting(db, key, folder);
+        setSetting(db, key, folder);
+        return folderName(folder);
       },
     } satisfies Operation<'files.chooseFolder'>,
   };

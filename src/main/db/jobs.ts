@@ -21,6 +21,7 @@ import type {
 import { applyMemoryUpdate } from './memory';
 import { transaction } from './tx';
 import { searchPatterns, searchText } from './search';
+import { folderName } from '../fileNames';
 
 export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
 
@@ -108,7 +109,7 @@ function history(db: DatabaseSync, id: number): ExportRecord[] {
     id: r.id as number,
     material: r.material as string,
     fileName: r.file_name as string,
-    folder: r.folder as string,
+    folder: folderName(r.folder as string),
     exportedAt: r.exported_at as number,
     recordCount: r.record_count as number,
     size: r.size as number,

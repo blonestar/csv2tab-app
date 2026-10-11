@@ -2,6 +2,7 @@
 // do run sa neproverenim argumentima. Operacije su u src/main/operations/ po oblastima; nova oblast se spaja ovde.
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { APP_ORIGIN, type IpcChannel } from '../shared/api';
+import { fileErrorMessage } from './fileNames';
 import { appOperations } from './operations/app';
 import { backupOperations } from './operations/backup';
 import { catalogOperations } from './operations/catalog';
@@ -38,10 +39,14 @@ export function registerIpc(ctx: IpcContext): void {
 
   for (const channel of Object.keys(operations) as IpcChannel[]) {
     const op = operations[channel] as Operation<IpcChannel>;
-    ipcMain.handle(channel, (e, ...args: unknown[]) => {
+    ipcMain.handle(channel, async (e, ...args: unknown[]) => {
       if (!trusted(e)) throw new Error('Poziv iz nepoznatog okvira.');
       if (ctx.lock.restoring && !allowedWhileRestoring.includes(channel)) throw new Error('Baza je upravo vraćena iz kopije; potvrdite da se prozor ponovo učita.');
-      return op.run(...op.validate(args));
+      try {
+        return await op.run(...op.validate(args));
+      } catch (error) {
+        throw new Error(fileErrorMessage(error));
+      }
     });
   }
 }

@@ -1,5 +1,6 @@
 import { getAllSettings, getSetting, setSetting } from '../db/settings';
-import { checkSetting, isFolderSetting, isSettingKey, type SettingKey } from '../../shared/settings';
+import { folderName } from '../fileNames';
+import { SETTINGS, checkSetting, isFolderSetting, isSettingKey, type SettingKey } from '../../shared/settings';
 import { noArgs, type IpcContext, type Operation } from './types';
 
 function keyArg(v: unknown): SettingKey {
@@ -14,11 +15,20 @@ export function settingsOperations(ctx: IpcContext) {
         if (args.length !== 1) throw new Error('Očekivan je jedan argument: ključ.');
         return [keyArg(args[0])];
       },
-      run: (key) => getSetting(ctx.db.sqlite, key),
+      run(key) {
+        const value = getSetting(ctx.db.sqlite, key);
+        return isFolderSetting(key) ? folderName(value as string) : value;
+      },
     } satisfies Operation<'settings.get'>,
     'settings.all': {
       validate: noArgs,
-      run: () => getAllSettings(ctx.db.sqlite),
+      run() {
+        const settings = getAllSettings(ctx.db.sqlite);
+        for (const key of Object.keys(SETTINGS) as SettingKey[]) {
+          if (isFolderSetting(key)) settings[key] = folderName(settings[key]);
+        }
+        return settings;
+      },
     } satisfies Operation<'settings.all'>,
     'settings.set': {
       validate(args) {

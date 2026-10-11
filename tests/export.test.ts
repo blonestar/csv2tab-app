@@ -1,7 +1,7 @@
 // Provera i atomičan upis u WT folder (Node, privremeni folderi) i provera argumenata operacija.
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeWtTab } from '@core/wtTab';
 import { checkExport, writeExport } from '../src/main/export';
@@ -21,9 +21,9 @@ describe('export.check / export.write', () => {
   it('novi fajl se upisuje bez pitanja, bez privremenih ostataka', async () => {
     const items = [{ name: 'A 18 mm', bytes: tab() }];
     const c = await checkExport(dir, items);
-    expect(c).toMatchObject({ ok: true, items: [{ name: 'A 18 mm.tab', status: 'new', existing: null }] });
+    expect(c).toMatchObject({ ok: true, folder: basename(dir), items: [{ name: 'A 18 mm.tab', status: 'new', existing: null }] });
     const w = await writeExport(dir, items, []);
-    expect(w).toMatchObject({ ok: true, items: [{ name: 'A 18 mm.tab', status: 'written' }] });
+    expect(w).toMatchObject({ ok: true, folder: basename(dir), items: [{ name: 'A 18 mm.tab', status: 'written' }] });
     expect(readdirSync(dir)).toEqual(['A 18 mm.tab']);
     expect(Buffer.from(readFileSync(join(dir, 'A 18 mm.tab'))).equals(Buffer.from(items[0].bytes))).toBe(true);
   });
@@ -64,7 +64,9 @@ describe('export.check / export.write', () => {
   it('folder nije zadat ili ne postoji: jasna poruka, ništa se ne upisuje', async () => {
     expect(await checkExport('', [{ name: 'a', bytes: tab() }])).toMatchObject({ ok: false, reason: 'no-folder' });
     const gone = join(dir, 'nema');
-    expect(await writeExport(gone, [{ name: 'a', bytes: tab() }], [])).toMatchObject({ ok: false, reason: 'folder-missing' });
+    const missing = await writeExport(gone, [{ name: 'a', bytes: tab() }], []);
+    expect(missing).toMatchObject({ ok: false, reason: 'folder-missing', folder: 'nema' });
+    expect(JSON.stringify(missing)).not.toContain(dir);
     // fajl umesto foldera
     writeFileSync(join(dir, 'f'), 'x');
     expect(await checkExport(join(dir, 'f'), [{ name: 'a', bytes: tab() }])).toMatchObject({ ok: false, reason: 'folder-missing' });
@@ -73,6 +75,7 @@ describe('export.check / export.write', () => {
     mkdirSync(join(dir, 'a.tab'));
     const w = await writeExport(dir, [{ name: 'a', bytes: tab() }, { name: 'b', bytes: tab() }], ['a']);
     expect(w).toMatchObject({ ok: true, items: [{ name: 'a.tab', status: 'error' }, { name: 'b.tab', status: 'written' }] });
+    expect(JSON.stringify(w)).not.toContain(dir);
     expect(readdirSync(dir).sort()).toEqual(['a.tab', 'b.tab']);
   });
 });

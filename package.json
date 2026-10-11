@@ -1,6 +1,6 @@
 {
   "name": "csv2tab-app",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "author": "Bojan",
   "type": "module",

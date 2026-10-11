@@ -76,6 +76,7 @@ export interface ExportRecord {
   id: number;
   material: string;
   fileName: string;
+  /** Naziv foldera za prikaz; puna putanja ostaje u bazi. */
   folder: string;
   exportedAt: number;
   recordCount: number;
