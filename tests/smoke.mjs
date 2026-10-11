@@ -569,6 +569,18 @@ try {
   await page.evaluate(() => { const s = document.querySelector('[data-testid=parts-scroll]'); s.scrollTop = 0; });
   // tabela crta samo vidljive redove: pre izmene se čeka da se prikaže početak spiska (inače bi ćelija nestala usred izmene)
   await page.waitForFunction(() => document.querySelector('tr[data-key] td.rn')?.textContent === '1');
+  // sortiranje zapisa menja samo prikaz: redni brojevi ostaju izvorni, a posao se ne menja
+  const firstRn = (n) => page.waitForFunction((want) => document.querySelector('tr[data-key] td.rn')?.textContent === String(want), n);
+  await page.click('.parts-table button[data-sort=dim1]');
+  await page.waitForSelector('.parts-table button[data-sort=dim1][data-dir=asc]');
+  await firstRn(1);
+  await page.click('.parts-table button[data-sort=dim1]');
+  await firstRn(N);
+  assert.equal(await page.locator('tr[data-key] input[data-field=dim1]').first().inputValue(), String(1000 + N - 1));
+  await page.click('.parts-table th.rn button');
+  await firstRn(1);
+  assert.equal(await page.getAttribute('[data-testid=parts-summary]', 'data-edited'), '0');
+  console.log('zapisi: sortiranje po dužini opadajuće stavlja zapis 6000 na vrh, Rb. vraća izvorni redosled');
   await page.evaluate(() => {
     const probe = (window.__probe = { states: [], long: [], keyAt: 0, shownAt: 0 });
     new PerformanceObserver((l) => { for (const e of l.getEntries()) probe.long.push(Math.round(e.duration)); }).observe({ entryTypes: ['longtask'] });
@@ -823,6 +835,21 @@ try {
   await page.waitForSelector('[data-testid=job-empty]');
   await search('');
   assert.equal((await rowsNow()).length, 7);
+  // sortiranje po koloni: klik na zaglavlje, redosled dolazi iz baze; izbor ostaje posle povratka iz posla
+  const newestFirst = await rowsNow();
+  const byName = [...newestFirst].sort(new Intl.Collator('sr-Latn', { numeric: true }).compare);
+  const sortJobs = async (by, dir) => {
+    await page.click(`[data-testid=job-list] button[data-sort=${by}]`);
+    await page.waitForSelector(`[data-testid=job-list] button[data-sort=${by}][data-dir=${dir}]`);
+  };
+  const waitRows = (want) => page.waitForFunction((w) => [...document.querySelectorAll('[data-testid=job-list] tbody tr')].map((t) => t.dataset.name).join('\n') === w, want.join('\n'));
+  await sortJobs('name', 'asc');
+  await waitRows(byName);
+  await sortJobs('name', 'desc');
+  await waitRows([...byName].reverse());
+  await sortJobs('date', 'desc');
+  await waitRows(newestFirst);
+  console.log('lista poslova: sortiranje po imenu rastuće i opadajuće, pa nazad na najnovije prvo');
   console.log('pretraga: naziv dela, ime posla, materijal i datum nalaze posao; "sifonjer"/"ŠIFONJER ĐAK"/"djak" i "supa djurdjevak" rade bez obzira na dijakritike');
 
   // izmena pa odmah zatvaranje programa, bez čekanja na indikator: glavni proces traži čuvanje pre zatvaranja

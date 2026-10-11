@@ -60,10 +60,15 @@ export interface JobListItem {
   lastExportAt: number | null;
 }
 
+export const JOB_SORT_KEYS = ['name', 'source', 'parts', 'date', 'status'] as const;
+export type JobSortKey = (typeof JOB_SORT_KEYS)[number];
+
 export interface JobListQuery {
   text: string;
   offset: number;
   limit: number;
+  /** Bez ovoga: najnoviji prvi. Poslovi sa istom vrednošću ostaju najnoviji prvi. */
+  sort?: { by: JobSortKey; dir: 'asc' | 'desc' };
 }
 
 export interface JobListResult {

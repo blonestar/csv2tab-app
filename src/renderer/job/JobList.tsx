@@ -1,16 +1,26 @@
 // Lista sačuvanih poslova: najnoviji prvi, pretraga (ime, materijal, naziv dela, datum), stranice po PAGE poslova.
 // Upit i stranice rade u bazi; renderer dobija samo red po poslu, nikad zapise.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { JobListItem } from '../../shared/jobs';
+import type { JobListItem, JobSortKey } from '../../shared/jobs';
+import { SortTh, nextSort, type Sort } from '../components/SortTh';
 import { STATUS_LABEL, errText, formatDateTime } from '../format';
 import { columnResize } from '../columnResize';
 
 const PAGE = 50;
 const SEARCH_DELAY_MS = 250;
+const NEWEST_FIRST: Sort<JobSortKey> = { by: 'date', dir: 'desc' };
+/** Izbor kolone važi dok aplikacija radi: lista se ponovo pravi pri svakom povratku iz posla. */
+let lastSort = NEWEST_FIRST;
 
 export function JobList({ onOpen, focusRequest = 0 }: { onOpen: (id: number) => void; focusRequest?: number }) {
   const [text, setText] = useState('');
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState(lastSort);
+  // datum prvo opadajuće (najnoviji prvi), ostale kolone rastuće
+  const onSort = (by: JobSortKey) => {
+    lastSort = sort.by !== by && by === 'date' ? NEWEST_FIRST : nextSort(sort, by, false) ?? NEWEST_FIRST;
+    setSort(lastSort);
+  };
   const [items, setItems] = useState<JobListItem[]>([]);
   const [total, setTotal] = useState(0);
   /** Upit na koji se odnosi prikazana lista (test čeka na ovo, ne na vreme). */
@@ -26,11 +36,11 @@ export function JobList({ onOpen, focusRequest = 0 }: { onOpen: (id: number) => 
     return () => clearTimeout(t);
   }, [text]);
 
-  const load = useCallback(async (q: string, offset: number) => {
+  const load = useCallback(async (q: string, s: Sort<JobSortKey>, offset: number) => {
     const mine = ++token.current;
     setError(null);
     try {
-      const r = await window.api.jobs.list({ text: q, offset, limit: PAGE });
+      const r = await window.api.jobs.list({ text: q, offset, limit: PAGE, sort: s });
       if (mine !== token.current) return;
       setItems((cur) => (offset === 0 ? r.items : [...cur, ...r.items]));
       setTotal(r.total);
@@ -45,8 +55,8 @@ export function JobList({ onOpen, focusRequest = 0 }: { onOpen: (id: number) => 
   }, []);
 
   useEffect(() => {
-    void load(query, 0);
-  }, [query, load]);
+    void load(query, sort, 0);
+  }, [query, sort, load]);
 
   return (
     <div className="joblist">
@@ -84,12 +94,12 @@ export function JobList({ onOpen, focusRequest = 0 }: { onOpen: (id: number) => 
             </colgroup>
             <thead>
               <tr>
-                <th>Posao</th>
-                <th className="hide-narrow">Fajl</th>
+                <SortTh id="name" sort={sort} onSort={onSort}>Posao</SortTh>
+                <SortTh id="source" sort={sort} onSort={onSort} className="hide-narrow">Fajl</SortTh>
                 <th>Materijali</th>
-                <th className="r">Zapisa</th>
-                <th>Datum</th>
-                <th>Izvoz</th>
+                <SortTh id="parts" sort={sort} onSort={onSort} className="r">Zapisa</SortTh>
+                <SortTh id="date" sort={sort} onSort={onSort}>Datum</SortTh>
+                <SortTh id="status" sort={sort} onSort={onSort}>Izvoz</SortTh>
               </tr>
             </thead>
             <tbody>
@@ -118,7 +128,7 @@ export function JobList({ onOpen, focusRequest = 0 }: { onOpen: (id: number) => 
       )}
       {items.length < total && (
         <p>
-          <button type="button" className="btn" data-testid="job-more" disabled={more} onClick={() => { setMore(true); void load(query, items.length); }}>
+          <button type="button" className="btn" data-testid="job-more" disabled={more} onClick={() => { setMore(true); void load(query, sort, items.length); }}>
             Prikaži još ({total - items.length})
           </button>
         </p>
