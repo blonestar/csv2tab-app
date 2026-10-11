@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react';
 import { compareParts, type DiffRow } from '@core/compare';
 import type { WtPart } from '@core/wtTab';
+import { columnResize } from '../columnResize';
 
 const MAX_ROWS = 1500;
 const MARK: Record<DiffRow['status'], string> = { same: '=', changed: '≠', onlyA: '＋', onlyB: '−' };
@@ -49,7 +50,7 @@ export function DiffTable({ a, b, aLabel, bLabel, hideSummary }: { a: readonly W
         </label>
       )}
       <div className="table-scroll diff-scroll">
-        <table className="grid diff-table">
+        <table className="grid diff-table" ref={columnResize('diff')}>
           <thead>
             <tr>
               <th />
