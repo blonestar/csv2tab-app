@@ -135,6 +135,10 @@ Podešavanja se **ne čuvaju u localStorage**, nego u bazi, pa ne zavise od orig
 Običan desktop izgled: sistemski font, zbijene tabele, svetla i tamna tema. „Sketch" stil web aplikacije (rukopis,
 rough.js, milimetarski papir) se **ne prenosi**. Jezik je srpski, latinica.
 
+Kolonama tabela se širina menja mišem (povlačenje ivice zaglavlja; dvoklik na ivicu vraća podrazumevane širine).
+Širine se pamte po tabeli u `localStorage` renderera: to je stanje prikaza na računaru, nije u bazi ni u rezervnoj
+kopiji. Tabela šifara kantovanja u Podešavanjima je forma i nema promenu širine.
+
 Jedan glavni prozor sa bočnom trakom:
 
 - **Poslovi** — lista (najnoviji prvi, po 50 sa „Prikaži još“) sa pretragom (ime, napomena, fajl, materijal, naziv

@@ -10,6 +10,7 @@ import { useSettings } from '../settings';
 import { sameEdgeRules } from '../../shared/edgeRules';
 import type { DerivedJob, SourceFile } from './derive';
 import { choiceOf, rulesDiffer, withAutoMapping, withChoice, withCurrentRules, withDelimiter, withEncoding, withMappingField, withMerge, withSheet } from './state';
+import { columnResize } from '../columnResize';
 
 type SetState = (update: (s: JobState) => JobState) => void;
 interface TabProps {
@@ -28,7 +29,7 @@ export function MaterialsTab({ catalog, state, derived, setState }: TabProps & {
     <p className="muted small" data-testid="materials-legend">
       Oznake uz izbor: <b>iz pamćenja</b> = preuzeto iz prethodnih uvoza, <b>predlog</b> = automatski iz kataloga, <b>ručno</b> = izabrano u ovom poslu.
     </p>
-    <table className="grid materials-table" data-testid="materials-table">
+    <table className="grid materials-table" ref={columnResize('job-materials')} data-testid="materials-table">
       <colgroup>
         <col className="c-src" />
         <col className="c-n" />
@@ -249,7 +250,7 @@ export function SourceTab({ file, state, derived, setState }: TabProps) {
 
       <h2>Sirovi redovi <span className="muted">({src.rows.length})</span></h2>
       <div className="table-scroll raw-scroll">
-        <table className="grid raw-table">
+        <table key={cols} className="grid raw-table" ref={columnResize('raw')}>
           <thead>
             <tr><th>#</th>{Array.from({ length: cols }, (_, c) => <th key={c}>{colLetters(c)}</th>)}</tr>
           </thead>
@@ -278,7 +279,7 @@ export function ExportsTab({ exports }: { exports: JobExports }) {
       {exports.outputs.length === 0 ? (
         <p className="muted">Posao trenutno nema nijedan izlazni fajl.</p>
       ) : (
-        <table className="grid" data-testid="outputs-table">
+        <table className="grid" ref={columnResize('outputs')} data-testid="outputs-table">
           <thead>
             <tr><th>Fajl</th><th>Materijal</th><th>Zapisa</th><th>Stanje</th></tr>
           </thead>
@@ -298,7 +299,7 @@ export function ExportsTab({ exports }: { exports: JobExports }) {
       {exports.exports.length === 0 ? (
         <p className="muted">Ovaj posao još nije izvožen.</p>
       ) : (
-        <table className="grid exports-history" data-testid="exports-table">
+        <table className="grid exports-history" ref={columnResize('exports')} data-testid="exports-table">
           <thead>
             <tr><th>Vreme</th><th>Fajl</th><th>Zapisa</th><th>Ishod</th><th>Folder</th></tr>
           </thead>

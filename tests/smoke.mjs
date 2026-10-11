@@ -522,6 +522,32 @@ try {
   assert.ok(saveMs < 3000, `čuvanje velikog posla ${saveMs} ms`);
   assert.ok(pr.states.map(([s]) => s).join() === 'dirty,saving,saved' || pr.states.map(([s]) => s).includes('saved'), JSON.stringify(pr.states));
 
+  // širina kolona mišem: ivica zaglavlja prati miša, ostale kolone se ne pomeraju, a širina se pamti po tabeli
+  const colWidths = () =>
+    page.evaluate(() => [...document.querySelectorAll('.parts-table thead th')].map((th) => Math.round(th.getBoundingClientRect().width)));
+  const colEdge = (i) =>
+    page.evaluate((n) => {
+      const r = document.querySelectorAll('.parts-table thead th')[n].getBoundingClientRect();
+      return { x: r.right - 2, y: r.top + r.height / 2 };
+    }, i);
+  const savedCols = () => page.evaluate(() => JSON.parse(localStorage.getItem('cols:parts')));
+  const w0 = await colWidths();
+  const edge = await colEdge(1);
+  await page.mouse.move(edge.x, edge.y);
+  assert.equal(await page.evaluate(() => document.querySelector('.parts-table').style.cursor), 'col-resize');
+  await page.mouse.down();
+  await page.mouse.move(edge.x + 60, edge.y, { steps: 4 });
+  await page.mouse.up();
+  const w1 = await colWidths();
+  assert.equal(w1[1], w0[1] + 60, `kolona Dužina: ${w0[1]} -> ${w1[1]}`);
+  w1.forEach((w, i) => i !== 1 && assert.ok(Math.abs(w - w0[i]) <= 1, `kolona ${i} se pomerila: ${w0[i]} -> ${w1[i]}`));
+  assert.equal((await savedCols())[1], w1[1]);
+  await openTab('materials');
+  await openTab('parts');
+  await page.waitForSelector('.parts-table[data-resized]');
+  assert.deepEqual(await colWidths(), w1, 'širine kolona nisu vraćene posle promene kartice');
+  console.log(`širina kolona: Dužina ${w0[1]} -> ${w1[1]} px, ostale iste, zapamćeno`);
+
   assert.deepEqual(problems, [], `CSP ili greške u konzoli: ${problems.join(' | ')}`);
 
   // ---------- poslovi: trajnost, stanje izvoza, pretraga ----------
@@ -641,6 +667,15 @@ try {
   await page.waitForSelector('[data-testid=exports-table] tbody tr');
   assert.equal(await page.locator('[data-testid=exports-table] tbody tr').count(), 1);
   await openTab('parts');
+  // širina kolone preživljava restart; dvoklik na ivicu zaglavlja vraća podrazumevane širine
+  await page.waitForSelector('.parts-table[data-resized]');
+  assert.equal((await colWidths())[1], w1[1], 'širina kolone nije preživela restart');
+  const edge2 = await colEdge(1);
+  await page.mouse.dblclick(edge2.x, edge2.y);
+  await page.waitForSelector('.parts-table:not([data-resized])');
+  assert.equal(await savedCols(), null);
+  assert.equal(await page.evaluate(() => document.querySelector('.parts-table').style.width), '');
+  console.log('širina kolona: preživela restart, dvoklik vratio podrazumevane');
   // izvoz u sveži, prazan WT folder: isti bajtovi kao prvi izvoz, bez originalnog fajla na disku
   await chooseWtFolder(wtD);
   assert.deepEqual(readdirSync(wtD), []);

@@ -5,6 +5,7 @@ import { describeCode, describePair, edgeLabel, type EdgeRule } from '@core/part
 import type { EditField, JobState } from '../../shared/job';
 import type { DerivedJob, JobRecord } from '../job/derive';
 import { parseEditValue, withEdit, withSwap, withoutEdit, withoutEdits } from '../job/state';
+import { columnResize } from '../columnResize';
 
 const ROW_H = 30;
 const OVERSCAN = 8;
@@ -193,7 +194,7 @@ export function PartsTable({ derived, setState, rules }: { derived: DerivedJob; 
         <p className="muted">Nema zapisa za prikaz.</p>
       ) : (
         <div className="table-scroll" ref={scroller} onScroll={(e) => setView({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })} data-testid="parts-scroll">
-          <table className="grid parts-table">
+          <table className="grid parts-table" ref={columnResize('parts')}>
             <colgroup>
               <col className="c-rn" />
               <col className="c-dim" />
