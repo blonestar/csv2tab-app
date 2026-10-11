@@ -30,7 +30,7 @@ export interface AppInfo {
 /** Koji dijalog za otvaranje fajla: uvoz (csv, ods, xlsx, tab) ili samo .tab za poređenje. */
 export type OpenPurpose = 'import' | 'compare';
 
-export const MAIN_COMMANDS = ['import', 'export', 'search', 'settings', 'about', 'pending-files', 'theme-changed'] as const;
+export const MAIN_COMMANDS = ['import', 'export', 'search', 'settings', 'updates', 'about', 'pending-files', 'theme-changed'] as const;
 export type MainCommand = (typeof MAIN_COMMANDS)[number];
 export interface MenuRequest { id: number; kind: MainCommand }
 

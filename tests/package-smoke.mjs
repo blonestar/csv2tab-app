@@ -29,7 +29,9 @@ old.close();
 const env = { ...process.env, CSV2TAB_TEST: '1', CSV2TAB_DEV_URL: 'http://127.0.0.1:1', CSV2TAB_TEST_IMPORT: join(temp, 'nema.csv') };
 delete env.ELECTRON_RUN_AS_NODE;
 // Varijanta ažuriranja zavisi samo od načina pokretanja: AppImage ga sam postavlja, a raspakovan program ga nema.
+// Nasleđene tuđe AppImage promenljive (APPIMAGE, APPDIR) bi lažno napravile varijantu; pravi AppImage ih postavlja sam.
 delete env.APPIMAGE;
+delete env.APPDIR;
 delete env.PORTABLE_EXECUTABLE_FILE;
 delete env.PORTABLE_EXECUTABLE_DIR;
 const expectedVariant = executablePath.endsWith('.AppImage') ? 'appimage' : process.platform === 'win32' ? 'nsis' : 'unsupported';

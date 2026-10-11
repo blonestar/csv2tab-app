@@ -80,6 +80,11 @@ body {
   margin-top: auto;
 }
 
+.nav.update-notice {
+  color: var(--accent);
+  font-size: 0.9em;
+}
+
 .content {
   display: flex;
   flex: 1;
