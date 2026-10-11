@@ -17,6 +17,8 @@ export function About() {
         <dl className="facts" data-testid="app-info">
           <dt>Aplikacija</dt>
           <dd>{info.appVersion}</dd>
+          <dt>Autor</dt>
+          <dd>Bojan</dd>
           <dt>Jezgro konverzije</dt>
           <dd>{info.coreVersion}</dd>
           <dt>Šema baze</dt>
