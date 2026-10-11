@@ -37,23 +37,31 @@ kad promena to zahteva. Format je `MAJOR.MINOR.PATCH`.
   pomeranje submodula koje dira samo web UI.
 - Promena šeme baze ide uvek kao **nova migracija**; postojeće migracije se ne menjaju posle merge-a.
 - Komanda: `npm version <major|minor|patch> --no-git-tag-version`.
-- Git tag (`v0.2.0`) se pravi posle merge-a u `main` i samo na zahtev korisnika. Tag pokreće izdanje.
+- Git tag (`v0.2.0`) se pravi posle merge-a u `main` i samo na zahtev korisnika. Tag pokreće izdanje. Između dva
+  izdanja može da prođe više verzija.
 - U završnoj poruci navedi staru i novu verziju i zašto je izabran taj nivo.
 
 ## Pull request i merge
 
-Repo je `blonestar/csv2tab-app` (javan, kao i submodul `blonestar/csv2tab`). Posle otvaranja PR-a agent ga
-**sam mergeuje** u `main` kad provere prođu. GitHub Actions proverava Linux i Windows, uključujući pakovanje;
-agent pre merge-a pokreće i lokalnu proveru iz odeljka „Provera pre predaje" i navodi stvarne rezultate u PR-u.
+Repo je `blonestar/csv2tab-app` (javan, kao i submodul `blonestar/csv2tab`). Agent otvara PR, ali ga **ne mergeuje
+dok korisnik ne proba i ne odobri**. GitHub Actions proverava Linux i Windows, uključujući pakovanje; agent pokreće
+i lokalnu proveru iz odeljka „Provera pre predaje" i navodi stvarne rezultate u PR-u.
 
 1. Otvori PR, pa `gh pr checks <broj> --watch --fail-fast` (ako provere postoje).
-2. Ako su provere prošle: `gh pr merge <broj> --merge --delete-branch`, pa lokalno `git switch main && git pull`.
-3. Mehanički konflikt (verzija u `package.json`/`package-lock.json`, pokazivač submodula) agent rešava sam: spoji
-   `origin/main` u granu, ponovo podigne verziju, proveri build i testove, pushuje i vrati se na korak 1.
-4. Ako provera padne ili konflikt traži odluku o ponašanju: **ne mergeuje**, već javi korisniku šta je palo.
+2. Kad provere prođu: javi korisniku da je PR spreman za probu i ponudi da pokreneš izgrađenu aplikaciju sa te
+   grane (`npm run build`, pa `env -u ELECTRON_RUN_AS_NODE npm start`). Zatim **čekaj odobrenje**.
+3. Posle odobrenja: `gh pr merge <broj> --merge --delete-branch`, pa lokalno `git switch main && git pull`.
+4. Mehanički konflikt (verzija u `package.json`/`package-lock.json`, pokazivač submodula) agent rešava sam: spoji
+   `origin/main` u granu, ponovo podigne verziju, proveri build i testove, pushuje i vrati se na korak 1. Ako je
+   spajanje donelo tuđe izmene u istim fajlovima, korisnik proba ponovo.
+5. Ako provera padne ili konflikt traži odluku o ponašanju: javi korisniku šta je palo.
 
+- Bez čekanja se mergeuje samo kad korisnik to izričito kaže za taj zadatak (npr. „spoji odmah", „ide odmah
+  izdanje"). Odobrenje važi za taj PR, ne za sledeće.
 - Merge commit (`--merge`), ne squash/rebase.
-- Ne mergeuje se ako korisnik kaže da PR treba da sačeka ili ako je PR draft.
+- Draft PR se ne mergeuje.
+- **Izdanje je odvojena odluka.** Merge ne znači izdanje: korisnik često skupi više promena pa tek onda traži
+  izdanje. Tag se ne pravi i ne predlaže posle svakog merge-a.
 
 ## Provera pre predaje
 
