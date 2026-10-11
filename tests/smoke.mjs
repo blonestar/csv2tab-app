@@ -8,6 +8,8 @@
 // Pokreće se posle `npm run build`.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
+import { createServer } from 'node:http';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
@@ -22,6 +24,10 @@ const fx = (n) => [...readFileSync(fixturePath(n))];
 const env = { ...process.env, CSV2TAB_TEST: '1' };
 delete env.ELECTRON_RUN_AS_NODE; // nasleđen iz Electron alata bi pretvorio Electron u Node
 delete env.CSV2TAB_DEV_URL;
+// Nasleđen tuđi AppImage (npr. program iz kog je pokrenut test) ne sme da menja varijantu ažuriranja.
+delete env.APPIMAGE;
+delete env.APPDIR;
+const pkgVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 
 const userData = mkdtempSync(join(tmpdir(), 'csv2tab-smoke-'));
 const extraDirs = [];
@@ -29,7 +35,60 @@ const extraDirs = [];
 // Wayland ne dozvoljava pouzdan programski fokus/položaj; automatizacija koristi X11 na zadatom DISPLAY-u.
 // Faktor 1: sa razlomljenim skaliranjem Electron na X11 zaokružuje veličinu prozora pri svakom pokretanju.
 const displayArgs = process.platform === 'linux' ? ['--ozone-platform=x11', '--force-device-scale-factor=1'] : [];
-const launch = (files = []) => _electron.launch({ executablePath: electron, args: [root, `--user-data-dir=${userData}`, ...displayArgs, ...files], env, timeout: 30000, colorScheme: null });
+// extraEnv: dodatne promenljive za jedno pokretanje (adresa servera izdanja u testu ažuriranja).
+const launch = (files = [], extraEnv = {}) => _electron.launch({ executablePath: electron, args: [root, `--user-data-dir=${userData}`, ...displayArgs, ...files], env: { ...env, ...extraEnv }, timeout: 30000, colorScheme: null });
+// Lokalni server izdanja za test ažuriranja: latest-linux.yml i latest.yml (isti sadržaj) i lažni paket nasumičnih
+// bajtova sa tačnim sha512 i veličinom. Radi samo na 127.0.0.1. stop/start drže isti port, pa adresa u programu ostaje.
+async function startUpdateFeed() {
+  const payload = randomBytes(300 * 1024);
+  const sha512 = createHash('sha512').update(payload).digest('base64');
+  const file = process.platform === 'win32' ? 'csv2tab-app-99.0.0-x64-setup.exe' : 'csv2tab-app-99.0.0-linux-x86_64.AppImage';
+  const yml = [
+    'version: 99.0.0',
+    'files:',
+    `  - url: ${file}`,
+    `    sha512: ${sha512}`,
+    `    size: ${payload.length}`,
+    `path: ${file}`,
+    `sha512: ${sha512}`,
+    "releaseDate: '2026-10-11T00:00:00.000Z'",
+    '',
+  ].join('\n');
+  const handle = (req, res) => {
+    const name = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname.slice(1));
+    if (name === 'latest-linux.yml' || name === 'latest.yml') {
+      res.writeHead(200, { 'content-type': 'text/yaml' });
+      res.end(yml);
+    } else if (name === file) {
+      res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': payload.length });
+      res.end(payload);
+    } else {
+      res.writeHead(404);
+      res.end();
+    }
+  };
+  let server = null;
+  let port = 0;
+  const listen = () => new Promise((resolve, reject) => {
+    const s = createServer(handle);
+    s.once('error', reject);
+    s.listen(port, '127.0.0.1', () => {
+      server = s;
+      port = s.address().port;
+      resolve();
+    });
+  });
+  const stop = () => new Promise((resolve) => {
+    const s = server;
+    server = null;
+    if (!s) return resolve();
+    s.closeAllConnections();
+    s.close(() => resolve());
+  });
+  await listen();
+  return { get port() { return port; }, start: listen, stop, close: stop };
+}
+
 const isDark = (page) => page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches);
 const bodyBg = (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
 let app = await launch();
@@ -52,7 +111,7 @@ try {
     node: typeof require + typeof process,
     ipc: typeof window.ipcRenderer,
   }));
-  assert.deepEqual(surface, { api: ['app', 'backup', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'memory', 'settings'], node: 'undefinedundefined', ipc: 'undefined' });
+  assert.deepEqual(surface, { api: ['app', 'backup', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'memory', 'settings', 'update'], node: 'undefinedundefined', ipc: 'undefined' });
   const info = await page.evaluate(() => window.api.app.info());
   assert.equal(info.testMode, true);
   assert.match(info.electron, /^44\./);
@@ -167,6 +226,20 @@ try {
   await page.click(`label:has-text("${LABEL[keep]}")`);
   await waitTheme(page, keep);
   console.log(`tema promenjena na ${keep} (sistemska je ${systemDark ? 'dark' : 'light'}), pozadina:`, keepBg);
+
+  // ažuriranje bez test adrese: program nije u varijanti koja se ažurira, pa kartica objašnjava i nema provere.
+  // Učestalost i checkbox se upisuju odmah (proveravaju se posle restarta, niže).
+  await page.click('[data-testid=settings-tab-updates]');
+  await page.waitForSelector('[data-testid=update-unsupported]');
+  assert.equal(await page.textContent('[data-testid=update-current]'), pkgVersion);
+  assert.equal(await page.locator('[data-testid=update-check]').count(), 0);
+  await page.click('label:has-text("Jednom mesečno")');
+  await page.waitForSelector('input[name=updateInterval][value=monthly]:checked');
+  await page.click('[data-testid=update-on-startup]');
+  await page.waitForSelector('[data-testid=update-on-startup]:not(:checked)');
+  assert.equal(await page.evaluate(() => window.api.settings.get('updateInterval')), 'monthly');
+  assert.equal(await page.evaluate(() => window.api.settings.get('updateOnStartup')), false);
+  console.log(`ažuriranje bez test adrese: kartica prikazuje objašnjenje, verzija ${pkgVersion}; učestalost i checkbox upisani`);
 
   // ---------- poslovi: uvoz, automatsko čuvanje, izvoz ----------
   const wtA = mkdtempSync(join(tmpdir(), 'csv2tab-wt-a-'));
@@ -373,7 +446,7 @@ try {
   assert.equal(cmpSum.same, '3');
   assert.deepEqual(await cmp.evaluate(() => ({ node: typeof require + typeof process, api: Object.keys(window.api).sort() })), {
     node: 'undefinedundefined',
-    api: ['app', 'backup', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'memory', 'settings'],
+    api: ['app', 'backup', 'catalog', 'compare', 'export', 'files', 'jobs', 'lifecycle', 'memory', 'settings', 'update'],
   });
   assert.equal(await cmp.locator('.diff-table tr.changed').count(), 11);
   console.log('prozor poređenja:', JSON.stringify(cmpSum));
@@ -534,6 +607,32 @@ try {
   assert.ok(saveMs < 3000, `čuvanje velikog posla ${saveMs} ms`);
   assert.ok(pr.states.map(([s]) => s).join() === 'dirty,saving,saved' || pr.states.map(([s]) => s).includes('saved'), JSON.stringify(pr.states));
 
+  // širina kolona mišem: ivica zaglavlja prati miša, ostale kolone se ne pomeraju, a širina se pamti po tabeli
+  const colWidths = () =>
+    page.evaluate(() => [...document.querySelectorAll('.parts-table thead th')].map((th) => Math.round(th.getBoundingClientRect().width)));
+  const colEdge = (i) =>
+    page.evaluate((n) => {
+      const r = document.querySelectorAll('.parts-table thead th')[n].getBoundingClientRect();
+      return { x: r.right - 2, y: r.top + r.height / 2 };
+    }, i);
+  const savedCols = () => page.evaluate(() => JSON.parse(localStorage.getItem('cols:parts')));
+  const w0 = await colWidths();
+  const edge = await colEdge(1);
+  await page.mouse.move(edge.x, edge.y);
+  assert.equal(await page.evaluate(() => document.querySelector('.parts-table').style.cursor), 'col-resize');
+  await page.mouse.down();
+  await page.mouse.move(edge.x + 60, edge.y, { steps: 4 });
+  await page.mouse.up();
+  const w1 = await colWidths();
+  assert.equal(w1[1], w0[1] + 60, `kolona Dužina: ${w0[1]} -> ${w1[1]}`);
+  w1.forEach((w, i) => i !== 1 && assert.ok(Math.abs(w - w0[i]) <= 1, `kolona ${i} se pomerila: ${w0[i]} -> ${w1[i]}`));
+  assert.equal((await savedCols())[1], w1[1]);
+  await openTab('materials');
+  await openTab('parts');
+  await page.waitForSelector('.parts-table[data-resized]');
+  assert.deepEqual(await colWidths(), w1, 'širine kolona nisu vraćene posle promene kartice');
+  console.log(`širina kolona: Dužina ${w0[1]} -> ${w1[1]} px, ostale iste, zapamćeno`);
+
   assert.deepEqual(problems, [], `CSP ili greške u konzoli: ${problems.join(' | ')}`);
 
   // ---------- poslovi: trajnost, stanje izvoza, pretraga ----------
@@ -634,6 +733,10 @@ try {
   await page.waitForSelector(`input[value=${keep}]:checked`);
   assert.equal((await page.evaluate(() => window.api.app.info())).schemaVersion, 3);
   assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), basename(wtC), 'WT folder nije preživeo restart');
+  await page.click('[data-testid=settings-tab-updates]');
+  await page.waitForSelector('input[name=updateInterval][value=monthly]:checked');
+  assert.equal(await page.isChecked('[data-testid=update-on-startup]'), false, 'checkbox pri pokretanju nije preživeo restart');
+  assert.equal(await page.evaluate(() => window.api.settings.get('updateInterval')), 'monthly');
   console.log(`posle restarta: tema = ${keep}, primenjena`);
 
   await nav('Poslovi');
@@ -653,6 +756,15 @@ try {
   await page.waitForSelector('[data-testid=exports-table] tbody tr');
   assert.equal(await page.locator('[data-testid=exports-table] tbody tr').count(), 1);
   await openTab('parts');
+  // širina kolone preživljava restart; dvoklik na ivicu zaglavlja vraća podrazumevane širine
+  await page.waitForSelector('.parts-table[data-resized]');
+  assert.equal((await colWidths())[1], w1[1], 'širina kolone nije preživela restart');
+  const edge2 = await colEdge(1);
+  await page.mouse.dblclick(edge2.x, edge2.y);
+  await page.waitForSelector('.parts-table:not([data-resized])');
+  assert.equal(await savedCols(), null);
+  assert.equal(await page.evaluate(() => document.querySelector('.parts-table').style.width), '');
+  console.log('širina kolona: preživela restart, dvoklik vratio podrazumevane');
   // izvoz u sveži, prazan WT folder: isti bajtovi kao prvi izvoz, bez originalnog fajla na disku
   await chooseWtFolder(wtD);
   assert.deepEqual(readdirSync(wtD), []);
@@ -1073,6 +1185,65 @@ try {
   assert.deepEqual(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].getNormalBounds()), expectedBounds);
   assert.equal((await jobsApi()).total, finalTotal);
   console.log('argumenti: dva fajla pri pokretanju, relativna putanja iz druge instance, fokus i duplikat; položaj i veličina preživljavaju restart');
+
+  // ---------- ažuriranje sa lokalnim serverom izdanja ----------
+  // Provera ide na server iz testa (verzija 99.0.0). Server se gasi da greška provere uđe u stanje „error“, pa se
+  // ponovo pokreće na istom portu. Preuzimanje se radi, a instalacija se NIKAD ne pokreće (dugme ostaje nekliknuto).
+  // Keš electron-updatera ide u privremeni folder (inače bi pisao u ~/.cache).
+  await app.close();
+  const updateCache = mkdtempSync(join(tmpdir(), 'csv2tab-update-cache-'));
+  extraDirs.push(updateCache);
+  const feed = await startUpdateFeed();
+  const upText = () => page.textContent('[data-testid=update-status]');
+  const upNoPaths = (text) => assert.doesNotMatch(text, /\/tmp|\/home|\\/, `u poruci ima putanje: ${text}`);
+  const upStatus = (state) => page.waitForSelector(`[data-testid=update-status][data-state=${state}]`, { timeout: 60000 });
+  try {
+    app = await launch([], { CSV2TAB_TEST_UPDATE_URL: `http://127.0.0.1:${feed.port}/`, XDG_CACHE_HOME: updateCache, LOCALAPPDATA: updateCache });
+    page = await app.firstWindow();
+    watch(page);
+    await page.waitForURL('app://csv2tab/**', { timeout: 15000 });
+    await page.waitForSelector('nav.sidebar');
+    const expectedVariant = process.platform === 'win32' ? 'nsis' : 'appimage';
+    assert.equal((await page.evaluate(() => window.api.update.state())).variant, expectedVariant);
+    await settingsTab('updates');
+    await page.waitForSelector('[data-testid=update-check]:not([disabled])');
+    assert.equal(await page.textContent('[data-testid=update-last-check]'), 'još nije proveravano');
+    assert.equal(await page.locator('[data-testid=update-notice]').count(), 0);
+
+    // provera nalazi 99.0.0: poruka, obaveštenje u bočnoj traci i zapisano vreme provere
+    await page.click('[data-testid=update-check]');
+    await upStatus('available');
+    assert.match(await upText(), /99\.0\.0/);
+    await page.waitForSelector('[data-testid=update-notice]');
+    assert.match(await page.textContent('[data-testid=update-notice]'), /99\.0\.0/);
+    assert.notEqual(await page.textContent('[data-testid=update-last-check]'), 'još nije proveravano');
+    await screenshots('azuriranja');
+
+    // server nedostupan: provera javlja grešku bez putanja, a program i dalje radi
+    await feed.stop();
+    await page.click('[data-testid=update-check]');
+    await upStatus('error');
+    const failed = await upText();
+    assert.match(failed, /Provera nije uspela/);
+    upNoPaths(failed);
+    await nav('Poslovi');
+    await page.waitForSelector('[data-testid=job-list]');
+    await settingsTab('updates');
+    await upStatus('error');
+
+    // server ponovo radi: provera, preuzimanje i dugme za instalaciju (nekliknuto)
+    await feed.start();
+    await page.click('[data-testid=update-check]');
+    await upStatus('available');
+    await page.click('[data-testid=update-download]');
+    await upStatus('downloaded');
+    assert.match(await upText(), /99\.0\.0/);
+    upNoPaths(await upText());
+    assert.equal(await page.locator('[data-testid=update-install]').count(), 1);
+    console.log('ažuriranje sa lokalnim serverom: available, greška bez putanje kad server ne radi, downloaded; instalacija nije pokrenuta');
+  } finally {
+    await feed.close();
+  }
 
   assert.deepEqual(problems, [], `CSP ili greške u konzoli: ${problems.join(' | ')}`);
   await app.close();

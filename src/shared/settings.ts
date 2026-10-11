@@ -7,6 +7,10 @@ import { cloneEdgeRules, isEdgeRules } from './edgeRules';
 export const THEMES = ['system', 'light', 'dark'] as const;
 export type Theme = (typeof THEMES)[number];
 
+/** Učestalost automatske provere ažuriranja; `never` znači da se interval nikad ne smatra dospelim. */
+export const UPDATE_INTERVALS = ['daily', 'weekly', 'monthly', 'never'] as const;
+export type UpdateInterval = (typeof UPDATE_INTERVALS)[number];
+
 interface SettingDef<T> {
   /** true: vrednost zadaje samo glavni proces (dijalog za izbor foldera); `settings.set` iz renderera je odbija. */
   folder?: true;
@@ -37,6 +41,10 @@ export const SETTINGS = {
   decorRule: def<boolean>({ default: true, is: (v): v is boolean => typeof v === 'boolean' }),
   /** Spajanje istih delova u novim poslovima; svaki posao ima svoje (JobState.merge). */
   mergeDefault: def<boolean>({ default: true, is: (v): v is boolean => typeof v === 'boolean' }),
+  /** Učestalost automatske provere ažuriranja (vidi isCheckDue u src/main/update.ts). */
+  updateInterval: def<UpdateInterval>({ default: 'weekly', is: (v): v is UpdateInterval => UPDATE_INTERVALS.includes(v as UpdateInterval) }),
+  /** Provera ažuriranja i pri pokretanju programa, bez obzira na učestalost. */
+  updateOnStartup: def<boolean>({ default: true, is: (v): v is boolean => typeof v === 'boolean' }),
 };
 
 export type SettingKey = keyof typeof SETTINGS;

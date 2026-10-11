@@ -2,6 +2,7 @@ import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { searchMaterials, type WtCatalog, type WtBand, type WtMaterial } from '@core/catalog';
 import { compareText } from '../../shared/sort';
 import { SortTh, nextSort, type Sort } from '../components/SortTh';
+import { columnResize } from '../columnResize';
 
 const MAX_ROWS = 100;
 const norm = (s: string) => s.toLowerCase();
@@ -68,7 +69,7 @@ export function Catalog() {
           <h2>
             Materijali <span className="muted" data-testid="material-count">({matched} od {catalog.materials.length})</span>
           </h2>
-          <table className="grid" data-testid="materials">
+          <table className="grid" ref={columnResize('catalog-materials')} data-testid="materials">
             <thead>
               <tr>
                 <SortTh id="code" sort={materialSort} onSort={onMaterialSort}>Šifra</SortTh>
@@ -92,7 +93,7 @@ export function Catalog() {
           </table>
           {matched > MAX_ROWS && <p className="muted">Prikazano prvih {MAX_ROWS}; suzite pretragu.</p>}
           <h2>Trake ({bands.length})</h2>
-          <table className="grid" data-testid="bands">
+          <table className="grid" ref={columnResize('catalog-bands')} data-testid="bands">
             <thead>
               <tr>
                 <SortTh id="code" sort={bandSort} onSort={onBandSort}>Šifra</SortTh>

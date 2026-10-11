@@ -1,6 +1,7 @@
 import type { AppDatabase, OpenOptions } from '../db';
 import type { ComparePayload, IpcChannel, IpcOperations } from '../../shared/api';
 import type { OpenedFile } from '../../shared/job';
+import type { UpdateController } from '../update';
 
 export interface Operation<K extends IpcChannel> {
   /** Baca grešku ako argumenti nemaju očekivani oblik; inače ih vraća sa tačnim tipom. */
@@ -20,6 +21,8 @@ export interface IpcContext {
   lock: { restoring: boolean };
   /** Primenjuje podešavanje na samu aplikaciju (npr. temu prozora). */
   applySetting(key: string, value: unknown): void;
+  /** Provera, preuzimanje i instalacija izdanja (src/main/update.ts). */
+  update: UpdateController;
   /** Prozori poređenja; podaci stoje u glavnom procesu, prozor dobija samo id u adresi. */
   windows: {
     nextFile(): Promise<OpenedFile | null>;

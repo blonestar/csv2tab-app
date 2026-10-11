@@ -45,4 +45,20 @@ Ikonice su izvedene iz postojećeg web logoa i priložene u repou; ponovno gener
 GitHub Actions proverava PR-ove i `main` na Linuxu i Windowsu, a paketi i izveštaji su među artefaktima provere.
 Tag `v<verzija iz package.json>` pokreće izdanje sa AppImage, NSIS i portable paketom na GitHub Release, tek kada
 obe provere prođu. Tag se pravi posle merge-a u `main`, na zahtev korisnika. Oba repoa su javna; submodul se
-preuzima preko HTTPS-a bez dodatnih CI tajni. Paketi su bez potpisa i automatsko ažuriranje nije uvedeno.
+preuzima preko HTTPS-a bez dodatnih CI tajni. Paketi su bez potpisa. Ažuriranje programa je opisano u odeljku
+Ažuriranje; instalacija ažuriranja na Windowsu još nije ručno proverena.
+
+## Ažuriranje
+
+Program može sam da proveri da li postoji novije izdanje. Učestalost (svakog dana, jednom nedeljno, jednom mesečno
+ili nikad) i provera pri pokretanju podešavaju se u Podešavanjima, u kartici Ažuriranja. Istu proveru pokreće stavka
+Pomoć → Proveri ažuriranja…. Kad je izdanje dostupno, u bočnoj traci se pojavi obaveštenje.
+
+Preuzimanje i instalaciju pokrećete sami. Instalacija čuva sve nesačuvane izmene, kao pri zatvaranju programa.
+Bez interneta program radi kao i ranije i ne prikazuje dijalog. Portable verzija novo izdanje skida pored postojećeg
+`.exe` fajla, a stari ostaje.
+
+**Linux (AppImage):**
+- Preuzeti AppImage treba da dobije dozvolu za izvršavanje: `chmod +x csv2tab-app-*.AppImage`.
+- Najbolje ga je držati na disku sa Linux dozvolama (npr. `~/Applications`), jer ažuriranje zamenjuje sopstveni fajl.
+  Sa NTFS diska program radi iz terminala, ali upravnik fajlova ga možda neće pokrenuti dvoklikom.

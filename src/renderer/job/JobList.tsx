@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JobListItem, JobSortKey } from '../../shared/jobs';
 import { SortTh, nextSort, type Sort } from '../components/SortTh';
 import { STATUS_LABEL, errText, formatDateTime } from '../format';
+import { columnResize } from '../columnResize';
 
 const PAGE = 50;
 const SEARCH_DELAY_MS = 250;
@@ -82,7 +83,7 @@ export function JobList({ onOpen, focusRequest = 0 }: { onOpen: (id: number) => 
       )}
       {items.length > 0 && (
         <div className="table-scroll list-scroll">
-          <table className="grid job-table" data-testid="job-list" data-loaded={loadedFor ?? ''}>
+          <table className="grid job-table" ref={columnResize('jobs')} data-testid="job-list" data-loaded={loadedFor ?? ''}>
             <colgroup>
               <col className="c-name" />
               <col className="c-src hide-narrow" />

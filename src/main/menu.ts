@@ -26,6 +26,10 @@ export function installMenu(command: (c: MainCommand) => void, theme: Theme, set
       { type: 'separator' }, { label: 'Uvećaj', role: 'zoomIn' }, { label: 'Umanji', role: 'zoomOut' },
       { label: 'Stvarna veličina', role: 'resetZoom' }, { label: 'Ceo ekran', role: 'togglefullscreen' },
     ] },
-    { label: 'Pomoć', submenu: [{ id: 'about', label: 'O programu', click: () => command('about') }] },
+    { label: 'Pomoć', submenu: [
+      { id: 'updates', label: 'Proveri ažuriranja…', click: () => command('updates') },
+      { type: 'separator' },
+      { id: 'about', label: 'O programu', click: () => command('about') },
+    ] },
   ]));
 }

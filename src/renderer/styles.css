@@ -80,6 +80,11 @@ body {
   margin-top: auto;
 }
 
+.nav.update-notice {
+  color: var(--accent);
+  font-size: 0.9em;
+}
+
 .content {
   display: flex;
   flex: 1;
@@ -164,6 +169,10 @@ h2 {
 .grid th button.sort { max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: inherit; white-space: inherit; line-height: inherit; cursor: pointer; }
 .grid th button.sort:hover, .grid th[aria-sort] button.sort { color: var(--fg); }
 .grid th .sort-mark { margin-left: 3px; font-size: 0.7em; }
+/* kolone kojima je širina promenjena mišem (columnResize.ts); u tabeli materijala bi odsecanje sakrilo padajuću listu */
+.grid[data-resized]:not(.materials-table) th,
+.grid[data-resized]:not(.materials-table) td { max-width: none; overflow: hidden; text-overflow: ellipsis; }
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none; }
 
 /* ---------- posao ---------- */
 .btn {

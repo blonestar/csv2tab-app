@@ -274,7 +274,16 @@ describe('podešavanja', () => {
     db.close();
     db = open();
     expect(getSetting(db.sqlite, 'theme')).toBe('dark');
-    expect(getAllSettings(db.sqlite)).toEqual({ theme: 'dark', wtFolder: '', backupFolder: '', edgeRules: DEFAULT_EDGE_RULES, decorRule: true, mergeDefault: true });
+    expect(getAllSettings(db.sqlite)).toEqual({
+      theme: 'dark',
+      wtFolder: '',
+      backupFolder: '',
+      edgeRules: DEFAULT_EDGE_RULES,
+      decorRule: true,
+      mergeDefault: true,
+      updateInterval: 'weekly',
+      updateOnStartup: true,
+    });
   });
   it('odbija pogrešan tip i nepoznatu vrednost, a stara vrednost ostaje', () => {
     const db = open();

@@ -5,6 +5,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { APP_ORIGIN, APP_SCHEME, type ComparePayload, type MainCommand } from '../shared/api';
+import type { UpdateState } from '../shared/update';
 import { resolveAppPath } from './appPath';
 import { CSP_BUILT, cspDev } from './csp';
 import catalog from '../../web/src/data/wt-catalog.json' with { type: 'json' };
@@ -18,6 +19,8 @@ import { readOpenedFile } from './files';
 import { rememberOpenedPath } from './openedPaths';
 import { installMenu } from './menu';
 import { restoreWindowState } from './windowState';
+import { chooseVariant, createUpdateController, updateTestUrl } from './update';
+import { createUpdateDriver } from './updater';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const RENDERER_ROOT = join(here, '../renderer');
@@ -191,35 +194,50 @@ if (gotLock) app.on('second-instance', (_event, argv, cwd) => {
   command('pending-files');
 });
 
+// Prozor koji je prošao prepareClose sme da se zatvori bez novog pitanja (zatvaranje ili instalacija ažuriranja).
+const closeReady = new WeakSet<BrowserWindow>();
+let closing: Promise<boolean> | null = null;
+
+/** Čuva nesačuvano, pita ako čuvanje nije uspelo i upisuje položaj prozora. Vraća true kad sme da se zatvori. */
+function prepareClose(win: BrowserWindow): Promise<boolean> {
+  closing ??= confirmClose(win).finally(() => {
+    closing = null;
+  });
+  return closing;
+}
+
+async function confirmClose(win: BrowserWindow): Promise<boolean> {
+  const ok = await requestFlush(win);
+  if (!ok) {
+    const r = await dialog.showMessageBox(win, {
+      type: 'warning',
+      message: 'Poslednje izmene posla nisu sačuvane.',
+      detail: 'Čuvanje u bazu nije uspelo. Ako zatvorite program, te izmene se gube.',
+      buttons: ['Ostani u programu', 'Zatvori bez čuvanja'],
+      defaultId: 0,
+      cancelId: 0,
+    });
+    if (r.response !== 1) return false;
+  }
+  database?.sqlite.prepare("INSERT INTO meta (key, value) VALUES ('window_state', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+    .run(JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() }));
+  closeReady.add(win);
+  return true;
+}
+
+/** Stanje ažuriranja ide u glavni prozor (renderer ga prikazuje). */
+function sendUpdateState(state: UpdateState): void {
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) mainWindow.webContents.send('update.state', state);
+}
+
 function openMainWindow(): void {
   const win = createWindow();
   mainWindow = win;
-  let flushed = false;
-  let flushing = false;
   win.on('close', (e) => {
-    if (flushed) return;
+    if (closeReady.has(win)) return;
     e.preventDefault();
-    if (flushing) return;
-    flushing = true;
-    void requestFlush(win).then(async (ok) => {
-      if (!ok) {
-        const r = await dialog.showMessageBox(win, {
-          type: 'warning',
-          message: 'Poslednje izmene posla nisu sačuvane.',
-          detail: 'Čuvanje u bazu nije uspelo. Ako zatvorite program, te izmene se gube.',
-          buttons: ['Ostani u programu', 'Zatvori bez čuvanja'],
-          defaultId: 0,
-          cancelId: 0,
-        });
-        if (r.response !== 1) {
-          flushing = false;
-          return;
-        }
-      }
-      flushed = true;
-      database?.sqlite.prepare("INSERT INTO meta (key, value) VALUES ('window_state', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
-        .run(JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized() }));
-      win.close();
+    void prepareClose(win).then((ok) => {
+      if (ok) win.close();
     });
   });
   // zatvaranjem glavnog prozora zatvaraju se i prozori poređenja, pa aplikacija izlazi
@@ -269,7 +287,31 @@ app.whenReady().then(() => {
   } else {
     serveApp();
   }
-  registerIpc({ devUrl, testMode, db: database, dbOptions: dbOptions(), lock, applySetting, windows });
+  const db = database;
+  // Ažuriranje: varijanta po okruženju; u test režimu adresa lokalnog servera (vidi update.ts).
+  const variant = chooseVariant({ platform: process.platform, packaged: app.isPackaged, env: process.env, execPath: process.execPath });
+  const update = createUpdateController({
+    variant,
+    currentVersion: app.getVersion(),
+    now: () => Date.now(),
+    driver: createUpdateDriver(variant, updateTestUrl(process.env, app.isPackaged), process.env),
+    readLastCheck() {
+      const row = db.sqlite.prepare("SELECT value FROM meta WHERE key = 'update_last_check'").get() as { value: string } | undefined;
+      const n = row ? Number(row.value) : NaN;
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    },
+    writeLastCheck(time) {
+      db.sqlite.prepare("INSERT INTO meta (key, value) VALUES ('update_last_check', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value").run(String(time));
+    },
+    readSettings: () => ({ updateInterval: getSetting(db.sqlite, 'updateInterval'), updateOnStartup: getSetting(db.sqlite, 'updateOnStartup') }),
+    send: sendUpdateState,
+    prepareInstall: () => (mainWindow && !mainWindow.isDestroyed() ? prepareClose(mainWindow) : Promise.resolve(true)),
+    abortInstall: () => {
+      if (mainWindow && !mainWindow.isDestroyed()) closeReady.delete(mainWindow);
+    },
+    log: (message, error) => console.error(message, error),
+  });
+  registerIpc({ devUrl, testMode, db: database, dbOptions: dbOptions(), lock, applySetting, windows, update });
   installMenu(command, getSetting(database.sqlite, 'theme'), (theme) => {
     if (lock.restoring || !database) return;
     setSetting(database.sqlite, 'theme', theme);
@@ -277,6 +319,10 @@ app.whenReady().then(() => {
     command('theme-changed');
   });
   openMainWindow();
+  // Automatska provera: nekoliko sekundi posle otvaranja (da ne uspori pokretanje), pa jednom na sat dok radi.
+  const autoCheck = (run: () => Promise<boolean>) => void run().catch((error) => console.error('Automatska provera ažuriranja nije uspela.', error));
+  setTimeout(() => autoCheck(() => update.startupCheck()), 5000);
+  setInterval(() => autoCheck(() => update.tick()), 60 * 60 * 1000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) openMainWindow();
   });

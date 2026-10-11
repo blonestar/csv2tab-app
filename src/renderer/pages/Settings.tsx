@@ -7,6 +7,7 @@ import { useSettings } from '../settings';
 import { BackupSection } from './settings/BackupSection';
 import { EdgeRulesEditor } from './settings/EdgeRulesEditor';
 import { MemorySection } from './settings/MemorySection';
+import { UpdateSection } from './settings/UpdateSection';
 
 const LABELS: Record<Theme, string> = { system: 'Sistemska', light: 'Svetla', dark: 'Tamna' };
 
@@ -15,8 +16,9 @@ const SECTIONS = [
   { id: 'edge', label: 'Šifre kantovanja' },
   { id: 'memory', label: 'Zapamćeni izbori' },
   { id: 'backup', label: 'Rezervna kopija' },
+  { id: 'updates', label: 'Ažuriranja' },
 ] as const;
-type SectionId = (typeof SECTIONS)[number]['id'];
+export type SettingsSection = (typeof SECTIONS)[number]['id'];
 
 function General() {
   const { settings, set, reload } = useSettings();
@@ -70,10 +72,10 @@ function General() {
   );
 }
 
-export function Settings() {
+/** Odeljak se drži u App (meni može da otvori određeni, npr. Ažuriranja), pa se pamti i kad se stranica zatvori. */
+export function Settings({ section, onSection }: { section: SettingsSection; onSection: (s: SettingsSection) => void }) {
   const { settings, error } = useSettings();
   const { catalog } = useSession();
-  const [section, setSection] = useState<SectionId>('general');
 
   return (
     <div className="settings-page" data-testid="settings-page">
@@ -81,7 +83,7 @@ export function Settings() {
       {error && <p role="alert" className="banner error">Greška: {error}</p>}
       <div className="tabs" role="tablist">
         {SECTIONS.map((s) => (
-          <button key={s.id} type="button" role="tab" aria-selected={section === s.id} data-testid={`settings-tab-${s.id}`} className={section === s.id ? 'tab active' : 'tab'} onClick={() => setSection(s.id)}>
+          <button key={s.id} type="button" role="tab" aria-selected={section === s.id} data-testid={`settings-tab-${s.id}`} className={section === s.id ? 'tab active' : 'tab'} onClick={() => onSection(s.id)}>
             {s.label}
           </button>
         ))}
@@ -91,6 +93,7 @@ export function Settings() {
         {section === 'edge' && (settings ? <EdgeRulesEditor rules={settings.edgeRules} /> : <p className="muted">Učitavam…</p>)}
         {section === 'memory' && <MemorySection catalog={catalog} />}
         {section === 'backup' && <BackupSection />}
+        {section === 'updates' && <UpdateSection />}
       </div>
     </div>
   );

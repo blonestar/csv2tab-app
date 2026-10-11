@@ -5,6 +5,7 @@ import type { WtCatalog } from '@core/catalog';
 import type { MemoryList } from '../../../shared/memory';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { errText, formatDateTime } from '../../format';
+import { columnResize } from '../../columnResize';
 
 function colLetters(c: number): string {
   let s = '';
@@ -55,7 +56,7 @@ export function MemorySection({ catalog }: { catalog: WtCatalog | null }) {
         <p className="muted" data-testid="memory-materials-empty">Još ništa nije zapamćeno. Izbor se pamti kad se materijal ručno izabere u poslu ili kad se posao izveze.</p>
       ) : (
         <>
-          <table className="grid memory-table" data-testid="memory-materials">
+          <table className="grid memory-table" ref={columnResize('memory-materials')} data-testid="memory-materials">
             <thead>
               <tr><th>Naziv iz fajla</th><th>WT materijal</th><th>Traka</th><th>Prati teksturu</th><th>Promenjeno</th><th /></tr>
             </thead>
@@ -81,7 +82,7 @@ export function MemorySection({ catalog }: { catalog: WtCatalog | null }) {
         <p className="muted" data-testid="memory-mappings-empty">Još ništa nije zapamćeno. Mapiranje se pamti kad ga ručno promenite u kartici Izvor.</p>
       ) : (
         <>
-          <table className="grid memory-table" data-testid="memory-mappings">
+          <table className="grid memory-table" ref={columnResize('memory-mappings')} data-testid="memory-mappings">
             <thead>
               <tr><th>Zaglavlje fajla</th><th>Mapiranje</th><th>Promenjeno</th><th /></tr>
             </thead>

@@ -29,6 +29,7 @@ export function appOperations(ctx: IpcContext): { 'app.info': Operation<'app.inf
           testMode: ctx.testMode,
           schemaVersion: schemaVersion(sqlite),
           sqliteVersion: v.v,
+          updateVariant: ctx.update.variant,
         } satisfies IpcOperations['app.info']['result'];
       },
     },

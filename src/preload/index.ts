@@ -2,6 +2,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { Api } from '../shared/api';
 import { MAIN_COMMANDS, type MainCommand } from '../shared/api';
+import type { UpdateState } from '../shared/update';
 
 const api: Api = {
   app: {
@@ -69,6 +70,20 @@ const api: Api = {
   compare: {
     open: (payload) => ipcRenderer.invoke('compare.open', payload),
     get: (id) => ipcRenderer.invoke('compare.get', id),
+  },
+  update: {
+    state: () => ipcRenderer.invoke('update.state'),
+    check: () => ipcRenderer.invoke('update.check'),
+    download: () => ipcRenderer.invoke('update.download'),
+    install: () => ipcRenderer.invoke('update.install'),
+    onState(handler) {
+      const listener = (_event: unknown, state: unknown) => {
+        // samo objekat stiže iz glavnog procesa; sve ostalo se ignoriše
+        if (typeof state === 'object' && state !== null) handler(state as UpdateState);
+      };
+      ipcRenderer.on('update.state', listener);
+      return () => void ipcRenderer.removeListener('update.state', listener);
+    },
   },
 };
 
