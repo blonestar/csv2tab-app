@@ -14,6 +14,9 @@ AppImage je pokrenut na Fedori: migrira staru bazu, uvozi i ponavlja izvoz posle
 CI pokreće build, testove i smoke na Linuxu i Windowsu i gradi sva tri paketa. `node:sqlite` je proveren i na
 Windows CI runneru; ručna instalacija, nadogradnja, portable omotač i deinstalacija na Windowsu 10/11 ostaju otvoreni.
 
+**Naredni prioritet je proces izdanja:** završiti preostale provere i potvrditi prvi stvarni GitHub Release sa sva
+tri paketa. Tek zatim se uvodi mogućnost ažuriranja aplikacije, po odluci korisnika.
+
 ## Cilj
 
 Korisnik je stolarska radionica, jedan računar sa Windowsom. Web verzija pretvara jedan fajl i ne pamti ništa.
@@ -33,7 +36,8 @@ Prvo izdanje:
 5. **Desktop integracija.** „Otvori pomoću" i prevlačenje fajla za `.csv`, `.ods`, `.xlsx`, `.tab`, jedna instanca,
    meni i prečice, rad bez interneta, instalacija i portable verzija.
 
-Kasnije (posle prvog izdanja, vidi [Faze](#faze)): praćenje foldera, potrošnja po poslu, urednik kataloga, štampa.
+Posle prvog izdanja prvo dolazi ažuriranje aplikacije (vidi [Faze](#faze)); zatim praćenje foldera, potrošnja po
+poslu, urednik kataloga i štampa.
 
 Van obima: izmena logike konverzije, novi ulazni formati, macOS, nalog/licenca, telemetrija, rad sa više računara
 nad istom bazom, sporedni TSV/tekst izvoz (ostaje samo u webu).
@@ -146,7 +150,8 @@ Jedan glavni prozor sa bočnom trakom:
   - *Izvozi*: trenutni fajlovi posla sa stanjem svakog (izvezen / menjan / nije izvezen) i istorija izvoza iz baze
     (vreme, fajl, broj zapisa, ishod „upisano“ ili „isti fajl već postoji“, folder).
 - **Katalog** — pregled i pretraga materijala i traka (izmena dolazi kasnije).
-- **Podešavanja**.
+- **Podešavanja** — planirana oblast „Ažuriranja“ ima izbor učestalosti provere novih verzija i nezavisan checkbox
+  „Proveri ažuriranja pri pokretanju“. Oba izbora se pamte u bazi čim se promene i važe posle restarta.
 
 Poseban prozor se otvara samo za **poređenje** (posao naspram postojećeg `.tab` fajla), jer se gleda uporedo sa
 zapisima. `.tab` fajl može i da se uveze kao posao radi pregleda i izmene.
@@ -308,6 +313,18 @@ stavlja na mrežni disk.
   Tag mora da bude tačno `v<version iz package.json>`. Release se pravi kao nacrt tek kad oba sistema prođu,
   zatim dobija tri paketa i objavljuje se. Pristup za pisanje dobija samo posao za Release. Tag se ne pravi automatski.
 
+### Ažuriranje aplikacije (planirano)
+
+Korisnik želi mogućnost provere, preuzimanja i primene novog izdanja aplikacije. Izvor izdanja je javni GitHub
+Release ovog repoa; samo obaveštenje sa linkom nije konačan cilj. Preduslov je završen i proveren proces izdanja.
+
+- U Podešavanjima korisnik bira učestalost provere i posebno uključuje ili isključuje proveru pri pokretanju
+  aplikacije. Tačni intervali i podrazumevane vrednosti definišu se pre implementacije.
+- Provera i preuzimanje rade u glavnom procesu; renderer prikazuje dostupnu verziju, napredak i ishod.
+  Nedostupan internet ne blokira pokretanje ni rad aplikacije.
+- Ažuriranje čuva bazu, poslove i podešavanja. Postojeća pravila rezervne kopije i migracija važe i pri nadogradnji.
+  Pre implementacije treba definisati način primene za NSIS, portable i AppImage.
+
 ## Faze
 
 Svaka faza je posebna grana iz `main`-a i poseban PR.
@@ -351,6 +368,11 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
 - [x] **8. CI i izdanja**: GitHub Actions na tag, paketi na Release, testovi i smoke test u CI-u.
       Matrica proverava aplikaciju i pakovanje na oba sistema. Objavljivanje Release-a čeka prvi tag koji
       korisnik zatraži; u ovoj fazi tag nije napravljen i izdanje nije objavljeno.
+- [ ] **Potvrda procesa izdanja — prvi naredni korak:** završiti preostale provere, na zahtev korisnika napraviti
+      tag i proveriti objavljen GitHub Release, dostupnost sva tri paketa i njihovo pokretanje. Ovo prethodi fazi 9.
+- [ ] **9. Ažuriranje aplikacije**: provera, preuzimanje i primena novog izdanja; u Podešavanjima učestalost provere
+      i checkbox „Proveri ažuriranja pri pokretanju“. *Gotovo kad:* izbori prežive restart, provera prati izabranu
+      učestalost i checkbox pri pokretanju, a ažuriranje sa starije verzije čuva bazu, poslove i podešavanja.
 
 Kasnije, redosled nije utvrđen:
 
@@ -360,7 +382,6 @@ Kasnije, redosled nije utvrđen:
 - **Štampa**: radionica za sada ne štampa liste. Mogućnost ostaje otvorena tako što `job_parts` čuva konačne zapise
   po poslu, a pregled posla je poseban prikaz koji može da dobije varijantu za štampu (`webContents.print` /
   `printToPDF`) ili nalepnice. Za to sada ne treba ništa dodatno graditi.
-- **Obaveštenje o novoj verziji** (zavisi od odluke ispod).
 
 ## Testiranje
 
@@ -385,7 +406,6 @@ Kasnije, redosled nije utvrđen:
 
 - **Potpisivanje za Windows.** Bez sertifikata SmartScreen pri prvoj instalaciji prikazuje „Unknown publisher".
   Pretpostavka dok se ne odluči drugačije: bez potpisa.
-- **Ažuriranje.** Oba repoa su javna; automatsko ažuriranje i dalje nije uvedeno.
-  Pretpostavka: bez automatskog ažuriranja; kasnija faza samo proverava javni JSON sa poslednjom verzijom i nudi
-  link. Gde stoji taj JSON i instalacije (javni repo samo za izdanja, Vercel, nešto treće) nije odlučeno.
+- **Detalji ažuriranja.** Mogućnost ažuriranja je dogovorena, posle potvrde procesa izdanja. Pre implementacije
+  ostaje da se utvrde ponuđeni intervali, podrazumevane vrednosti i način primene za NSIS, portable i AppImage.
 - **Linux paketi.** Pretpostavka: samo AppImage. `.rpm` na zahtev.
