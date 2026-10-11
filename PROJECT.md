@@ -317,17 +317,37 @@ stavlja na mrežni disk.
   Tag mora da bude tačno `v<version iz package.json>`. Release se pravi kao nacrt tek kad oba sistema prođu,
   zatim dobija tri paketa i objavljuje se. Pristup za pisanje dobija samo posao za Release. Tag se ne pravi automatski.
 
-### Ažuriranje aplikacije (planirano)
+### Ažuriranje aplikacije
 
-Korisnik želi mogućnost provere, preuzimanja i primene novog izdanja aplikacije. Izvor izdanja je javni GitHub
-Release ovog repoa; samo obaveštenje sa linkom nije konačan cilj. Preduslov je završen i proveren proces izdanja.
+Program može da proveri, preuzme i instalira novo izdanje. Izvor je javni GitHub Release ovog repoa. Za NSIS i
+AppImage koristi se electron-updater; portable `.exe` preuzima sam program. Ažuriranje čuva bazu, poslove i podešavanja.
+Postojeća pravila rezervne kopije i migracija važe i pri nadogradnji.
 
-- U Podešavanjima korisnik bira učestalost provere i posebno uključuje ili isključuje proveru pri pokretanju
-  aplikacije. Tačni intervali i podrazumevane vrednosti definišu se pre implementacije.
-- Provera i preuzimanje rade u glavnom procesu; renderer prikazuje dostupnu verziju, napredak i ishod.
-  Nedostupan internet ne blokira pokretanje ni rad aplikacije.
-- Ažuriranje čuva bazu, poslove i podešavanja. Postojeća pravila rezervne kopije i migracija važe i pri nadogradnji.
-  Pre implementacije treba definisati način primene za NSIS, portable i AppImage.
+- **Varijanta** se bira pri pokretanju (`chooseVariant` u `src/main/update.ts`):
+  - `nsis`: Windows instalacija (nema `PORTABLE_EXECUTABLE_FILE`). Preuzima i instalira electron-updater.
+  - `portable`: Windows `.exe` (postavlja ga `PORTABLE_EXECUTABLE_FILE`). Novo izdanje se skida u folder fajla pored
+    postojećeg, a stari fajl ostaje.
+  - `appimage`: Linux AppImage. Prepoznaje se po `APPIMAGE` i `APPDIR`, uz uslov da je izvršni fajl u `APPDIR`, pa
+    nasleđene promenljive tuđeg AppImage-a ne važe.
+  - `unsupported`: sve ostalo (nespakovana aplikacija, macOS). Kartica objašnjava da je ažuriranje dostupno samo u
+    instaliranoj verziji, a provere nema.
+- **Učestalost** u Podešavanjima → Ažuriranja: svakog dana, jednom nedeljno (podrazumevano), jednom mesečno ili nikad.
+  Checkbox „Proveri ažuriranja pri pokretanju“ nezavisan je od učestalosti i podrazumevano je uključen.
+- **Kad ide automatska provera:** 5 s posle pokretanja, ako je checkbox uključen ili je interval dospeo. Zatim se jednom
+  na sat proverava da li je provera dospela. Ručno: „Proveri sada“ u kartici i stavka Pomoć → „Proveri ažuriranja…“.
+- **Preuzimanje i instalaciju pokreće korisnik** („Preuzmi“, pa „Restartuj i instaliraj“ ili „Pokreni novu verziju“).
+  Instalacija prolazi kroz isto čuvanje kao zatvaranje prozora: nesačuvane izmene se upišu, a ako upis ne uspe, pita se
+  kao i pri zatvaranju. Ako instalacija ne uspe, prozor se vraća u normalno stanje.
+- **Bez interneta** se ne prikazuje dijalog. Greška provere ide u karticu, a obaveštenje „Dostupna je nova verzija“ se
+  pojavljuje u bočnoj traci kad je izdanje dostupno ili preuzeto.
+- **Podaci:** vreme poslednje uspešne provere je u tabeli `meta` (ključ `update_last_check`), bez nove migracije.
+- **Test:** `CSV2TAB_TEST_UPDATE_URL` (uz `CSV2TAB_TEST=1`, nespakovana aplikacija) usmerava proveru na lokalni server.
+  U test režimu instalacija se ne pokreće; `install()` tu baca grešku.
+- **Izdanje:** uz pakete Release nosi `latest.yml`, `latest-linux.yml` i `.blockmap`. Izdanje 0.8.1 nema te metapodatke,
+  pa ažuriranje sa njega ne radi; radi tek od prvog izdanja sa ovom funkcijom.
+- **Nije provereno:** instalacija ažuriranja na Windowsu (NSIS i portable), ni lokalno ni u CI-u. Na Linuxu su provera,
+  preuzimanje AppImage-a i obaveštenje proverene u smoke testu sa lokalnim serverom; zamena AppImage-a nije, jer se u
+  testu ne instalira. Portable preuzimanje je provereno samo jediničnim testovima sa lažnim odgovorom.
 
 ## Faze
 
@@ -372,11 +392,17 @@ Svaka faza je posebna grana iz `main`-a i poseban PR.
 - [x] **8. CI i izdanja**: GitHub Actions na tag, paketi na Release, testovi i smoke test u CI-u.
       Matrica proverava aplikaciju i pakovanje na oba sistema. Objavljivanje Release-a čeka prvi tag koji
       korisnik zatraži; u ovoj fazi tag nije napravljen i izdanje nije objavljeno.
-- [ ] **Potvrda procesa izdanja — prvi naredni korak:** završiti preostale provere, na zahtev korisnika napraviti
+- [x] **Potvrda procesa izdanja — prvi naredni korak:** završiti preostale provere, na zahtev korisnika napraviti
       tag i proveriti objavljen GitHub Release, dostupnost sva tri paketa i njihovo pokretanje. Ovo prethodi fazi 9.
+      **Urađeno:** 11. 10. 2026. objavljen je Release v0.8.1 sa tri paketa. AppImage je pokrenut na Fedori; Windows
+      paketi nisu ručno pokrenuti.
 - [ ] **9. Ažuriranje aplikacije**: provera, preuzimanje i primena novog izdanja; u Podešavanjima učestalost provere
       i checkbox „Proveri ažuriranja pri pokretanju“. *Gotovo kad:* izbori prežive restart, provera prati izabranu
       učestalost i checkbox pri pokretanju, a ažuriranje sa starije verzije čuva bazu, poslove i podešavanja.
+      **Urađeno:** izbori, provera, preuzimanje AppImage-a i obaveštenje su provereni na Linuxu (smoke sa lokalnim
+      serverom, AppImage i raspakovani paket). Portable preuzimanje je provereno samo jediničnim testovima.
+      **Nije provereno:** instalacija ažuriranja na Windowsu (NSIS i portable), a ni zamena AppImage-a sa starije
+      verzije uz zadržavanje baze. Windows paketi nisu ručno pokrenuti.
 
 Kasnije, redosled nije utvrđen:
 
@@ -410,6 +436,7 @@ Kasnije, redosled nije utvrđen:
 
 - **Potpisivanje za Windows.** Bez sertifikata SmartScreen pri prvoj instalaciji prikazuje „Unknown publisher".
   Pretpostavka dok se ne odluči drugačije: bez potpisa.
-- **Detalji ažuriranja.** Mogućnost ažuriranja je dogovorena, posle potvrde procesa izdanja. Pre implementacije
-  ostaje da se utvrde ponuđeni intervali, podrazumevane vrednosti i način primene za NSIS, portable i AppImage.
+- **Ažuriranje: šta nije provereno.** Instalacija ažuriranja na Windowsu (NSIS i portable) nije proverena ni lokalno
+  ni u CI-u, pa ostaje ručna proba. Izdanje 0.8.1 nema metapodatke za ažuriranje, pa ažuriranje radi tek od prvog
+  izdanja sa ovom funkcijom.
 - **Linux paketi.** Pretpostavka: samo AppImage. `.rpm` na zahtev.

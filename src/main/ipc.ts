@@ -12,6 +12,7 @@ import { filesOperations } from './operations/files';
 import { jobsOperations } from './operations/jobs';
 import { memoryOperations } from './operations/memory';
 import { settingsOperations } from './operations/settings';
+import { updateOperations } from './operations/update';
 import type { IpcContext, Operation } from './operations/types';
 
 export type { IpcContext } from './operations/types';
@@ -27,6 +28,7 @@ export function registerIpc(ctx: IpcContext): void {
     ...compareOperations(ctx),
     ...memoryOperations(ctx),
     ...backupOperations(ctx),
+    ...updateOperations(ctx),
   };
 
   const trusted = (e: IpcMainInvokeEvent) => {

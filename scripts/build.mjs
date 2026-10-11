@@ -10,7 +10,8 @@ export const mainOptions = {
   platform: 'node',
   format: 'esm',
   target: 'node24',
-  external: ['electron'],
+  // electron-updater ostaje u node_modules (uključuje ga electron-builder kao produkcionu zavisnost), a ne u bundle-u
+  external: ['electron', 'electron-updater'],
   sourcemap: true,
   logLevel: 'info',
 };
