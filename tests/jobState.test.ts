@@ -195,6 +195,10 @@ describe('argumenti za posao (granica glavnog procesa)', () => {
     for (const v of [{ text: 'x', offset: -1, limit: 50 }, { text: 'x', offset: 0, limit: 0 }, { text: 'x', offset: 0, limit: 201 }, { text: 'x'.repeat(201), offset: 0, limit: 5 }, { text: 5, offset: 0, limit: 5 }, null]) {
       expect(() => jobListQueryArg(v)).toThrow();
     }
+    expect(jobListQueryArg({ text: '', offset: 0, limit: 5, sort: { by: 'name', dir: 'desc', sql: 'x' } })).toEqual({ text: '', offset: 0, limit: 5, sort: { by: 'name', dir: 'desc' } });
+    for (const sort of [null, 'name', {}, { by: 'id', dir: 'asc' }, { by: 'name', dir: 'DESC' }, { by: 'name' }]) {
+      expect(() => jobListQueryArg({ text: '', offset: 0, limit: 5, sort })).toThrow();
+    }
     expect(jobMetaArg({ name: '  Novo  ' })).toEqual({ name: 'Novo' });
     expect(jobMetaArg({ note: '' })).toEqual({ note: '' });
     for (const v of [{}, { name: '   ' }, { name: 'x'.repeat(201) }, { note: 'x'.repeat(2001) }, { ime: 'x' }, { name: 5 }, null]) expect(() => jobMetaArg(v)).toThrow();

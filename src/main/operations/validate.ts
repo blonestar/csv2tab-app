@@ -5,6 +5,7 @@ import { memoryUpdateArg } from '../../shared/memory';
 import { MAX_OPEN_BYTES, kindFromName, type OpenedFile } from '../../shared/job';
 import { STATE_LIMITS, parseJobState } from '../../shared/jobStateCheck';
 import {
+  JOB_SORT_KEYS,
   MAX_JOB_LIST,
   MAX_JOB_NAME,
   MAX_JOB_NOTE,
@@ -173,7 +174,14 @@ export function jobListQueryArg(v: unknown): JobListQuery {
   if (!int(v.offset, 1_000_000) || typeof v.limit !== 'number' || !Number.isInteger(v.limit) || v.limit < 1 || v.limit > MAX_JOB_LIST) {
     throw new Error('Neispravna stranica liste.');
   }
-  return { text: v.text, offset: v.offset as number, limit: v.limit };
+  const q: JobListQuery = { text: v.text, offset: v.offset as number, limit: v.limit };
+  if (v.sort !== undefined) {
+    const s = v.sort;
+    const by = isObj(s) ? JOB_SORT_KEYS.find((k) => k === s.by) : undefined;
+    if (!isObj(s) || !by || (s.dir !== 'asc' && s.dir !== 'desc')) throw new Error('Neispravno sortiranje liste.');
+    q.sort = { by, dir: s.dir };
+  }
+  return q;
 }
 
 /** Ime (neprazno, bez razmaka na krajevima) i/ili napomena; nepoznato polje se odbija. */

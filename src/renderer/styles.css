@@ -161,6 +161,10 @@ h2 {
   font-weight: 500;
 }
 
+.grid th button.sort { max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: inherit; white-space: inherit; line-height: inherit; cursor: pointer; }
+.grid th button.sort:hover, .grid th[aria-sort] button.sort { color: var(--fg); }
+.grid th .sort-mark { margin-left: 3px; font-size: 0.7em; }
+
 /* ---------- posao ---------- */
 .btn {
   padding: 4px 12px;
@@ -260,14 +264,14 @@ select, input[type='text'], input[type='number'] {
 .table-scroll .grid { border-collapse: separate; border-spacing: 0; }
 .table-scroll thead th { position: sticky; top: 0; z-index: 1; background: var(--side); }
 /* Tabela zapisa: fiksne širine malih kolona, Oznaka i Materijal dele ostatak; na minimalnoj širini prozora se skroluje. */
-.parts-table { table-layout: fixed; min-width: 880px; }
+.parts-table { table-layout: fixed; min-width: 894px; }
 .parts-table td, .parts-table th { padding: 0 4px; height: 30px; overflow: hidden; text-overflow: ellipsis; }
 .parts-table th { white-space: normal; line-height: 1.15; }
 .parts-table col.c-rn { width: 36px; }
 .parts-table col.c-dim { width: 78px; }
 .parts-table col.c-swap { width: 28px; }
 .parts-table col.c-edge { width: 130px; }
-.parts-table col.c-tex { width: 68px; }
+.parts-table col.c-tex { width: 82px; }
 .parts-table col.c-qty { width: 56px; }
 .parts-table col.c-mat { width: 110px; }
 .parts-table col.c-mark { width: 20px; }

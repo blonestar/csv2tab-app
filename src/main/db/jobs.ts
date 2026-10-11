@@ -21,6 +21,7 @@ import type {
 import { applyMemoryUpdate } from './memory';
 import { transaction } from './tx';
 import { searchPatterns, searchText } from './search';
+import { compareText } from '../../shared/sort';
 import { folderName } from '../fileNames';
 
 export const sha256 = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
@@ -284,13 +285,37 @@ export function findBySource(db: DatabaseSync, hash: string): JobListItem[] {
   return (db.prepare(`${ITEM_SELECT} WHERE j.source_sha256 = ? ORDER BY j.created_at DESC, j.id DESC LIMIT 10`).all(hash) as Row[]).map(toItem);
 }
 
-/** Lista poslova, najnoviji prvi, sa stranicama. Pretraga: svaka reč mora da se nađe u sklopljenom tekstu posla. */
+const NEWEST_FIRST = 'j.created_at DESC, j.id DESC';
+/** Kolone koje sortira SQLite. Stanje izvoza ide redom: nije izvezen, menjan, izvezen. */
+const SORT_SQL = {
+  parts: 'j.part_count',
+  date: 'j.created_at',
+  status: "CASE j.export_status WHEN 'never' THEN 0 WHEN 'changed' THEN 1 ELSE 2 END",
+} as const;
+/** Tekstualne kolone sortira JavaScript: SQLite ne zna redosled slova č, ć, đ, š, ž. */
+const SORT_TEXT = { name: 'j.name', source: 'j.source_name' } as const;
+
+/**
+ * Lista poslova sa stranicama; bez `sort` najnoviji prvi. Pretraga: svaka reč mora da se nađe u sklopljenom
+ * tekstu posla.
+ */
 export function listJobs(db: DatabaseSync, q: JobListQuery): JobListResult {
   const patterns = searchPatterns(q.text);
   const where = patterns.length ? `WHERE ${patterns.map(() => "j.search LIKE ? ESCAPE '\\'").join(' AND ')}` : '';
+  const by = q.sort?.by;
+  if (by === 'name' || by === 'source') {
+    const all = db.prepare(`SELECT j.id, ${SORT_TEXT[by]} AS v FROM jobs j ${where} ORDER BY ${NEWEST_FIRST}`).all(...patterns) as { id: number; v: string }[];
+    const sign = q.sort?.dir === 'desc' ? -1 : 1;
+    all.sort((a, b) => compareText(a.v, b.v) * sign);
+    const ids = all.slice(q.offset, q.offset + q.limit).map((r) => r.id);
+    if (!ids.length) return { total: all.length, items: [] };
+    const found = new Map((db.prepare(`${ITEM_SELECT} WHERE j.id IN (${ids.map(() => '?').join(', ')})`).all(...ids) as Row[]).map((r) => [r.id as number, r]));
+    return { total: all.length, items: ids.flatMap((id) => { const r = found.get(id); return r ? [toItem(r)] : []; }) };
+  }
   const total = (db.prepare(`SELECT count(*) AS n FROM jobs j ${where}`).get(...patterns) as { n: number }).n;
+  const order = by ? `${SORT_SQL[by]} ${q.sort?.dir === 'desc' ? 'DESC' : 'ASC'}, ${NEWEST_FIRST}` : NEWEST_FIRST;
   const rows = db
-    .prepare(`${ITEM_SELECT} ${where} ORDER BY j.created_at DESC, j.id DESC LIMIT ? OFFSET ?`)
+    .prepare(`${ITEM_SELECT} ${where} ORDER BY ${order} LIMIT ? OFFSET ?`)
     .all(...patterns, q.limit, q.offset) as Row[];
   return { total, items: rows.map(toItem) };
 }

@@ -3,13 +3,16 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { describeCode, describePair, edgeLabel, type EdgeRule } from '@core/parts';
 import type { EditField, JobState } from '../../shared/job';
+import { compareText } from '../../shared/sort';
 import type { DerivedJob, JobRecord } from '../job/derive';
 import { parseEditValue, withEdit, withSwap, withoutEdit, withoutEdits } from '../job/state';
+import { SortTh, nextSort, type Sort } from './SortTh';
 
 const ROW_H = 30;
 const OVERSCAN = 8;
 
 type SetState = (update: (s: JobState) => JobState) => void;
+type SortKey = EditField | 'material';
 
 /** Polje koje se menja tek na Enter / napuštanje ćelije; Esc vraća staro. Nevažeća vrednost se vraća. */
 function NumCell({ value, label, field, onCommit, edited, className }: {
@@ -132,14 +135,39 @@ export function PartsTable({ derived, setState, rules }: { derived: DerivedJob; 
   const [material, setMaterial] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ top: 0, height: 600 });
+  // Sortiranje menja samo prikaz: redni broj i redosled u .tab fajlu ostaju izvorni.
+  const [sort, setSort] = useState<Sort<SortKey> | null>(null);
+  const onSort = (by: SortKey) => setSort((cur) => nextSort(cur, by, true));
 
-  const rows = useMemo(() => {
+  const filtered = useMemo(() => {
     const idx: number[] = [];
     derived.records.forEach((r, i) => {
       if (material === null || r.rec.material === material) idx.push(i);
     });
     return idx;
   }, [derived.records, material]);
+
+  // Redosled se računa pri izboru kolone, a ne pri svakoj izmeni ćelije: izmenjen red ne beži ispod kursora.
+  // Ponovo se računa tek kad se promeni skup zapisa (ključevi), filter ili izbor kolone.
+  const keys = useMemo(() => derived.records.map((r) => r.base.key).join('\u001f'), [derived.records]);
+  const order = useMemo(() => {
+    if (!sort) return null;
+    const { by, dir } = sort;
+    const sign = dir === 'asc' ? 1 : -1;
+    const value = (i: number) => derived.records[i].rec[by];
+    return derived.records
+      .map((_, i) => i)
+      .sort((a, b) => {
+        const x = value(a);
+        const y = value(b);
+        return (typeof x === 'number' && typeof y === 'number' ? x - y : compareText(String(x), String(y))) * sign || a - b;
+      });
+  }, [keys, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rows = useMemo(() => {
+    if (!order) return filtered;
+    const shown = new Set(filtered);
+    return order.filter((i) => shown.has(i));
+  }, [filtered, order]);
 
   useLayoutEffect(() => {
     const el = scroller.current;
@@ -210,16 +238,20 @@ export function PartsTable({ derived, setState, rules }: { derived: DerivedJob; 
             </colgroup>
             <thead>
               <tr>
-                <th className="rn">Rb.</th>
-                <th>Dužina</th>
+                <th className="rn">
+                  {sort ? (
+                    <button type="button" className="sort" data-sort="" title="Vrati izvorni redosled" onClick={() => setSort(null)}>Rb.</button>
+                  ) : 'Rb.'}
+                </th>
+                <SortTh id="dim1" sort={sort} onSort={onSort}>Dužina</SortTh>
                 <th />
-                <th>Širina</th>
-                <th>Kant uz dužinu</th>
-                <th>Kant uz širinu</th>
-                <th>Tekstura</th>
-                <th>Kom</th>
-                <th>Oznaka</th>
-                <th>Materijal</th>
+                <SortTh id="dim2" sort={sort} onSort={onSort}>Širina</SortTh>
+                <SortTh id="edge1" sort={sort} onSort={onSort}>Kant uz dužinu</SortTh>
+                <SortTh id="edge2" sort={sort} onSort={onSort}>Kant uz širinu</SortTh>
+                <SortTh id="grain" sort={sort} onSort={onSort}>Tekstura</SortTh>
+                <SortTh id="qty" sort={sort} onSort={onSort}>Kom</SortTh>
+                <SortTh id="name" sort={sort} onSort={onSort}>Oznaka</SortTh>
+                <SortTh id="material" sort={sort} onSort={onSort}>Materijal</SortTh>
                 <th />
                 <th />
               </tr>

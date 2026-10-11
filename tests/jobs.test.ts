@@ -25,7 +25,7 @@ import {
 import { foldText, searchPatterns, searchText } from '../src/main/db/search';
 import { newJobState } from '../src/renderer/job/defaults';
 import type { JobState } from '../src/shared/job';
-import type { JobSave, SavedPart } from '../src/shared/jobs';
+import type { JobSave, JobSortKey, SavedPart } from '../src/shared/jobs';
 
 const catalog = wtCatalog as unknown as WtCatalog;
 const MIGRATIONS = resolve(import.meta.dirname, '../migrations');
@@ -306,6 +306,25 @@ describe('lista i pretraga', () => {
     expect(p1.total).toBe(7);
     expect(p1.items.map((j) => j.name)).toEqual(['posao 7', 'posao 6', 'posao 5']);
     expect(listJobs(db.sqlite, { text: '', offset: 6, limit: 3 }).items.map((j) => j.name)).toEqual(['posao 1']);
+  });
+
+  it('sortiranje po koloni: tekst po srpskoj latinici, isti ostaju najnoviji prvi, stranice prate redosled', () => {
+    make('Šank', [part('A', 'x'), part('A', 'y'), part('A', 'z')], 1000, { file: 'c.csv' });
+    make('cigla 10', [part('A', 'x')], 2000, { file: 'a.csv' });
+    make('Zid', [part('A', 'x'), part('A', 'y')], 3000, { file: 'b.csv' });
+    make('Cigla 2', [part('A', 'x')], 4000, { file: 'd.csv' });
+    make('Čamac', [part('A', 'x')], 5000, { file: 'e.csv' });
+    const names = (by: JobSortKey, dir: 'asc' | 'desc', offset = 0, limit = 50) => listJobs(db.sqlite, { text: '', offset, limit, sort: { by, dir } }).items.map((j) => j.name);
+    expect(names('name', 'asc')).toEqual(['Cigla 2', 'cigla 10', 'Čamac', 'Šank', 'Zid']);
+    expect(names('name', 'desc')).toEqual(['Zid', 'Šank', 'Čamac', 'cigla 10', 'Cigla 2']);
+    expect(names('name', 'asc', 2, 2)).toEqual(['Čamac', 'Šank']);
+    expect(listJobs(db.sqlite, { text: '', offset: 9, limit: 2, sort: { by: 'name', dir: 'asc' } })).toEqual({ total: 5, items: [] });
+    expect(names('source', 'asc')).toEqual(['cigla 10', 'Zid', 'Šank', 'Cigla 2', 'Čamac']);
+    expect(names('parts', 'desc')).toEqual(['Šank', 'Zid', 'Čamac', 'Cigla 2', 'cigla 10']);
+    expect(names('parts', 'asc')).toEqual(['Čamac', 'Cigla 2', 'cigla 10', 'Zid', 'Šank']);
+    expect(names('date', 'asc')).toEqual(['Šank', 'cigla 10', 'Zid', 'Cigla 2', 'Čamac']);
+    expect(names('date', 'desc')).toEqual(names('status', 'asc'));
+    expect(listJobs(db.sqlite, { text: 'cigla', offset: 0, limit: 50, sort: { by: 'name', dir: 'desc' } })).toMatchObject({ total: 2, items: [{ name: 'cigla 10' }, { name: 'Cigla 2' }] });
   });
 
   it('dijakritici i velika slova: "sto" nalazi "što" i obrnuto, č/ć/š/ž/đ', () => {

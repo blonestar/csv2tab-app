@@ -139,17 +139,20 @@ Jedan glavni prozor sa bočnom trakom:
 
 - **Poslovi** — lista (najnoviji prvi, po 50 sa „Prikaži još“) sa pretragom (ime, napomena, fajl, materijal, naziv
   dela, datum) i dugme za uvoz. Fajl može i da se prevuče. Svaki red pokazuje stanje izvoza: nije izvezen / izvezen /
-  menjan posle izvoza. Ako je uvezen fajl isti (SHA-256) kao izvor postojećeg posla, pita se: otvori postojeći, napravi
+  menjan posle izvoza. Klik na zaglavlje (Posao, Fajl, Zapisa, Datum, Izvoz) sortira celu listu u bazi, ne samo
+  učitane redove; izbor važi dok aplikacija radi. Ako je uvezen fajl isti (SHA-256) kao izvor postojećeg posla, pita se: otvori postojeći, napravi
   nov ili odustani.
 - **Posao** (otvoren iz liste, dugme „← Poslovi“ vraća na listu) — ime i napomena se menjaju na licu mesta, indikator
   čuvanja (sačuvano / čeka / čuvam / nije sačuvano), brisanje posla (potvrda kaže da se brišu i sačuvani izvozi, a da
   fajlovi u WT folderu ostaju). Kartice:
-  - *Zapisi*: tabela sa izmenom ćelija (ručne izmene su označene), zamena dimenzija po redu, upozorenja.
+  - *Zapisi*: tabela sa izmenom ćelija (ručne izmene su označene), zamena dimenzija po redu, upozorenja. Klik na
+    zaglavlje sortira prikaz (rastuće, opadajuće, pa izvorni redosled; „Rb.“ ga vraća odmah). Redni brojevi i
+    redosled u `.tab` fajlu ostaju izvorni, a sortiranje se ne čuva u poslu.
   - *Materijali*: za svaki materijal iz fajla WT materijal, traka, „Prati teksturu" i ime izlaznog fajla.
   - *Izvor*: sirovi redovi i mapiranje kolona.
   - *Izvozi*: trenutni fajlovi posla sa stanjem svakog (izvezen / menjan / nije izvezen) i istorija izvoza iz baze
     (vreme, fajl, broj zapisa, ishod „upisano“ ili „isti fajl već postoji“, folder).
-- **Katalog** — pregled i pretraga materijala i traka (izmena dolazi kasnije).
+- **Katalog** — pregled i pretraga materijala i traka, sa sortiranjem po koloni (izmena dolazi kasnije).
 - **Podešavanja** — planirana oblast „Ažuriranja“ ima izbor učestalosti provere novih verzija i nezavisan checkbox
   „Proveri ažuriranja pri pokretanju“. Oba izbora se pamte u bazi čim se promene i važe posle restarta.
 
