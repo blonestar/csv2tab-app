@@ -86,6 +86,9 @@ jobs:
             release/*.AppImage
             release/*-setup.exe
             release/*-portable.exe
+            release/latest.yml
+            release/latest-linux.yml
+            release/*.blockmap
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -125,5 +128,5 @@ jobs:
           if [ -z "$draft" ]; then
             gh release create "$RELEASE_TAG" --verify-tag --generate-notes --draft
           fi
-          gh release upload "$RELEASE_TAG" paketi/*.AppImage paketi/*-setup.exe paketi/*-portable.exe --clobber
+          gh release upload "$RELEASE_TAG" paketi/*.AppImage paketi/*-setup.exe paketi/*-portable.exe paketi/latest.yml paketi/latest-linux.yml paketi/*.blockmap --clobber
           gh release edit "$RELEASE_TAG" --draft=false

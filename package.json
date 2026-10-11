@@ -21,6 +21,7 @@
     "test:package": "node tests/package-smoke.mjs"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "fflate": "^0.8.3"
   },
   "devDependencies": {

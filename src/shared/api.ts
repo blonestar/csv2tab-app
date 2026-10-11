@@ -7,6 +7,7 @@ import type { OpenedFile } from './job';
 import type { JobDetail, JobExports, JobListItem, JobListQuery, JobListResult, JobSave, JobSavedResult } from './jobs';
 import type { MemoryFound, MemoryList, MemoryLookup, MemoryUpdate } from './memory';
 import type { FolderSettingKey, SettingKey, SettingValue, SettingsMap } from './settings';
+import type { UpdateState, UpdateVariant } from './update';
 
 export interface AppInfo {
   /** Verzija aplikacije (`version` u package.json). */
@@ -22,6 +23,8 @@ export interface AppInfo {
   /** Verzija šeme baze (PRAGMA user_version). */
   schemaVersion: number;
   sqliteVersion: string;
+  /** Kako se program može ažurirati (vidi UpdateVariant). */
+  updateVariant: UpdateVariant;
 }
 
 /** Koji dijalog za otvaranje fajla: uvoz (csv, ods, xlsx, tab) ili samo .tab za poređenje. */
@@ -149,6 +152,10 @@ export interface IpcOperations {
   'app.flushed': { args: [ok: boolean]; result: void };
   'compare.open': { args: [payload: ComparePayload]; result: void };
   'compare.get': { args: [id: string]; result: ComparePayload };
+  'update.state': { args: []; result: UpdateState };
+  'update.check': { args: []; result: UpdateState };
+  'update.download': { args: []; result: UpdateState };
+  'update.install': { args: []; result: void };
 }
 
 export type IpcChannel = keyof IpcOperations;
@@ -228,6 +235,18 @@ export interface Api {
     open(payload: ComparePayload): Promise<void>;
     /** Podaci prozora poređenja (adresa prozora nosi samo njegov id). */
     get(id: string): Promise<ComparePayload>;
+  };
+  update: {
+    /** Trenutno stanje ažuriranja; ništa ne proverava na mreži. */
+    state(): Promise<UpdateState>;
+    /** Ručna provera (radi uvek, čeka kraj). Neuspeh je stanje `error`, ne izuzetak. */
+    check(): Promise<UpdateState>;
+    /** Pokreće preuzimanje dostupnog izdanja i odmah vraća stanje; napredak stiže kroz `onState`. */
+    download(): Promise<UpdateState>;
+    /** Posle preuzimanja: čuva sve izmene, pa instalira i ponovo pokreće program (ili pokreće novi fajl). */
+    install(): Promise<void>;
+    /** Svaka promena stanja iz glavnog procesa; poziv vraća funkciju za odjavu. */
+    onState(handler: (state: UpdateState) => void): () => void;
   };
 }
 

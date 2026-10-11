@@ -1,6 +1,12 @@
 appId: com.blonestar.csv2tab
 productName: csv2tab-app
 asar: true
+# Izvor izdanja za ažuriranje (app-update.yml u paketu, latest.yml / latest-linux.yml uz pakete).
+# Builder ništa ne otprema; skripte zadaju --publish never.
+publish:
+  provider: github
+  owner: blonestar
+  repo: csv2tab-app
 directories:
   output: release
   buildResources: build
