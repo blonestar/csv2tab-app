@@ -24,6 +24,7 @@ const api: Api = {
   export: {
     check: (items) => ipcRenderer.invoke('export.check', items),
     write: (items, overwrite, jobId) => ipcRenderer.invoke('export.write', items, overwrite, jobId),
+    save: (items, jobId) => ipcRenderer.invoke('export.save', items, jobId),
   },
   jobs: {
     list: (query) => ipcRenderer.invoke('jobs.list', query),

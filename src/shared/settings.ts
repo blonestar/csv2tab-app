@@ -31,8 +31,10 @@ function folderSetting(): SettingDef<string> & { folder: true } {
 
 export const SETTINGS = {
   theme: def<Theme>({ default: 'system', is: (v): v is Theme => THEMES.includes(v as Theme) }),
-  /** Folder u koji WT Input čita .tab fajlove. Prazno = nije zadat. */
+  /** Folder za izvoz .tab fajlova (ključ je ostao `wtFolder` zbog postojećih baza). Prazno = nije zadat. */
   wtFolder: folderSetting(),
+  /** Izvoz pita gde da sačuva i kako da nazove svaki fajl (sistemski dijalog). Isključeno = upis pravo u folder za izvoz. */
+  exportAsk: def<boolean>({ default: true, is: (v): v is boolean => typeof v === 'boolean' }),
   /** Folder za rezervne kopije baze. Prazno = nije zadat. */
   backupFolder: folderSetting(),
   /** Tabela šifara kantovanja za NOVE poslove; posao čuva svoj snimak (JobState.edgeRules). */

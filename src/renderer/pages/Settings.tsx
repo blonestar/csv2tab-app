@@ -39,10 +39,13 @@ function General() {
         ))}
       </fieldset>
       <fieldset className="group">
-        <legend>Folderi</legend>
-        <p className="muted small">WT folder je mesto odakle WT Input čita .tab fajlove; izvoz upisuje pravo u njega.</p>
+        <legend>Izvoz</legend>
+        <label className="choice">
+          <input type="checkbox" data-testid="export-ask" checked={settings.exportAsk} onChange={(e) => { setError(null); set('exportAsk', e.target.checked).catch(fail); }} />{' '}
+          Pitaj me gde da sačuvam i kako da nazovem fajl pri svakom izvozu
+        </label>
         <div className="folder-row">
-          <span className="folder-label">WT folder</span>
+          <span className="folder-label">Folder za izvoz</span>
           <code data-testid="wt-folder">{settings.wtFolder || 'nije zadat'}</code>
           <button
             type="button"
@@ -53,6 +56,11 @@ function General() {
             Izaberi…
           </button>
         </div>
+        <p className="muted small">
+          {settings.exportAsk
+            ? 'Dijalog za čuvanje se otvara u ovom folderu; pamti se poslednji u koji ste sačuvali.'
+            : 'Izvoz upisuje .tab fajlove pravo u ovaj folder, bez pitanja; pita samo pre prepisivanja fajla koji se razlikuje.'}
+        </p>
         <p className="muted small">Folder za rezervne kopije se bira u odeljku Rezervna kopija.</p>
       </fieldset>
       <fieldset className="group">

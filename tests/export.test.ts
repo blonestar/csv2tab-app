@@ -1,10 +1,10 @@
-// Provera i atomičan upis u WT folder (Node, privremeni folderi) i provera argumenata operacija.
+// Provera i atomičan upis u folder za izvoz (Node, privremeni folderi) i provera argumenata operacija.
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeWtTab } from '@core/wtTab';
-import { checkExport, writeExport } from '../src/main/export';
+import { checkExport, writeExport, writeExportAsk } from '../src/main/export';
 import { TEST_ENV, testOverride } from '../src/main/testHooks';
 import { bytesArg, comparePayloadArg, compareIdArg, exportItemsArg, overwriteArg } from '../src/main/operations/validate';
 import { isFolderSetting, isSettingKey, checkSetting } from '../src/shared/settings';
@@ -79,6 +79,63 @@ describe('export.check / export.write', () => {
     expect(readdirSync(dir).sort()).toEqual(['a.tab', 'b.tab']);
   });
 });
+describe('izvoz sa pitanjem', () => {
+  // dijalog „Sačuvaj kao" se zamenjuje redom odgovora; beleži sve putanje koje bi prikazao
+  const asked = (answers: (string | null)[]) => {
+    const seen: string[] = [];
+    const pick = async (p: string) => {
+      seen.push(p);
+      return answers.shift() ?? null;
+    };
+    return { seen, pick };
+  };
+
+  it('fajl se upisuje u folder i pod imenom koje vrati dijalog; dijalog dobija predloženo ime u početnom folderu', async () => {
+    const { seen, pick } = asked([join(dir, 'moje ime.tab')]);
+    const r = await writeExportAsk(dir, [{ name: 'A 18 mm', bytes: tab() }], pick);
+    expect(seen).toEqual([join(dir, 'A 18 mm.tab')]);
+    expect(r).toEqual({ dir, items: [{ name: 'moje ime.tab', status: 'written', dir }] });
+    expect(readdirSync(dir)).toEqual(['moje ime.tab']);
+  });
+  it('bez početnog foldera dijalog dobija samo ime fajla', async () => {
+    const { seen, pick } = asked([join(dir, 'x.tab')]);
+    await writeExportAsk('', [{ name: 'A 18 mm', bytes: tab() }], pick);
+    expect(seen).toEqual(['A 18 mm.tab']);
+  });
+  it('odustajanje na prvom fajlu: oba su odustala, dijalog jednom, ništa nije upisano', async () => {
+    const { seen, pick } = asked([null]);
+    const r = await writeExportAsk(dir, [{ name: 'a', bytes: tab() }, { name: 'b', bytes: tab() }], pick);
+    expect(seen).toHaveLength(1);
+    expect(r.items.map((i) => i.status)).toEqual(['canceled', 'canceled']);
+    expect(readdirSync(dir)).toEqual([]);
+  });
+  it('drugi dijalog se otvara u folderu prvog sačuvanog fajla', async () => {
+    const sub = join(dir, 'drugi');
+    mkdirSync(sub);
+    const { seen, pick } = asked([join(sub, 'x.tab'), join(sub, 'y.tab')]);
+    const r = await writeExportAsk(dir, [{ name: 'a', bytes: tab() }, { name: 'b', bytes: tab() }], pick);
+    expect(seen[1]).toBe(join(sub, 'b.tab'));
+    expect(r.items).toEqual([
+      { name: 'x.tab', status: 'written', dir: sub },
+      { name: 'y.tab', status: 'written', dir: sub },
+    ]);
+    expect(readdirSync(sub).sort()).toEqual(['x.tab', 'y.tab']);
+  });
+  it('isti bajtovi već postoje na izabranom mestu: identical, ništa se ne menja', async () => {
+    writeFileSync(join(dir, 'a.tab'), tab());
+    const { pick } = asked([join(dir, 'a.tab')]);
+    const r = await writeExportAsk(dir, [{ name: 'a', bytes: tab() }], pick);
+    expect(r.items).toEqual([{ name: 'a.tab', status: 'identical', dir }]);
+    expect(readdirSync(dir)).toEqual(['a.tab']);
+  });
+  it('ime iz dijaloga bez ekstenzije dobija .tab', async () => {
+    const { pick } = asked([join(dir, 'moje')]);
+    const r = await writeExportAsk(dir, [{ name: 'a', bytes: tab() }], pick);
+    expect(r.items).toEqual([{ name: 'moje.tab', status: 'written', dir }]);
+    expect(readdirSync(dir)).toEqual(['moje.tab']);
+  });
+});
+
 const exportName = (n: string) => `${n}.tab`;
 
 describe('provera argumenata', () => {

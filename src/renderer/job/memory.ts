@@ -71,16 +71,17 @@ export async function stateForNewJob(
   defaults: JobDefaults,
   catalog: WtCatalog,
   lookup: (q: MemoryLookup) => Promise<MemoryFound>,
+  jobName = '',
 ): Promise<{ state: JobState; derived: DerivedJob }> {
   let state = newJobState(defaults);
-  let derived = deriveJob(file, state, catalog);
+  let derived = deriveJob(file, state, catalog, undefined, jobName);
   if (file.kind === 'tab') return { state, derived };
 
   const signature = signatureOf(derived);
   let found = await lookup({ names: sourceNames(derived), signature });
   if (signature && found.mapping && mappingFitsColumns(found.mapping, signatureColumns(signature))) {
     const withMapping: JobState = { ...state, mapping: found.mapping, mappingFromMemory: true };
-    const d = deriveJob(file, withMapping, catalog);
+    const d = deriveJob(file, withMapping, catalog, undefined, jobName);
     if (d.conv && missingFields(d.conv.mapping).length === 0) {
       state = withMapping;
       derived = d;
@@ -93,7 +94,7 @@ export async function stateForNewJob(
     const names = new Set(sourceNames(derived));
     const own = Object.fromEntries(Object.entries(found.materials).filter(([n]) => names.has(n)));
     state = applyMaterialMemory(state, own, catalog);
-    derived = deriveJob(file, state, catalog);
+    derived = deriveJob(file, state, catalog, undefined, jobName);
   }
   return { state, derived };
 }

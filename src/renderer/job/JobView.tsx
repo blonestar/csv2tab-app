@@ -132,7 +132,7 @@ export function JobView({ session, derived, exportRequest }: { session: JobSessi
         >
           <p>
             Posao „{session.name}" se briše zajedno sa izvornim fajlom, ručnim izmenama i
-            {exportedCount ? ` ${exportedCount} sačuvanih izvoza` : ' sačuvanim izvozima'}. Fajlovi koji su već upisani u WT folder ostaju netaknuti.
+            {exportedCount ? ` ${exportedCount} sačuvanih izvoza` : ' sačuvanim izvozima'}. Fajlovi koji su već sačuvani na disku ostaju netaknuti.
           </p>
         </ConfirmDialog>
       )}

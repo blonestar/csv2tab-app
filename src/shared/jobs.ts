@@ -115,3 +115,6 @@ export const MAX_JOB_NAME = 200;
 export const MAX_JOB_NOTE = 2000;
 export const MAX_JOB_PARTS = 300_000;
 export const MAX_JOB_LIST = 200;
+
+/** Ime posla po zadatku: ime fajla bez ekstenzije (skraćeno na najveću dužinu imena). */
+export const defaultJobName = (fileName: string) => (fileName.replace(/\.[^.]+$/, '').trim() || fileName).slice(0, MAX_JOB_NAME);

@@ -17,6 +17,8 @@ export const TEST_ENV = {
   folder: 'CSV2TAB_TEST_FOLDER',
   /** Fajl rezervne kopije koji "izabere" dijalog za vraćanje baze. */
   restore: 'CSV2TAB_TEST_RESTORE',
+  /** Dijalog za čuvanje .tab-a: folder (fajl se „sačuva" pod predloženim imenom) ili cela putanja koja se završava na .tab. */
+  save: 'CSV2TAB_TEST_SAVE',
   /** Svako čuvanje posla pada (simulacija greške baze), dok je promenljiva zadata. */
   failSave: 'CSV2TAB_TEST_FAIL_SAVE',
 } as const;

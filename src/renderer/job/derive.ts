@@ -166,7 +166,7 @@ function grainOf(catalog: WtCatalog, state: Pick<JobState, 'materials' | 'decorR
 const baseName = (n: string) => n.replace(/\.[^.]+$/, '');
 
 // ---------- izvođenje ----------
-export function deriveJob(file: SourceFile, state: JobState, catalog: WtCatalog, cache?: DeriveCache): DerivedJob {
+export function deriveJob(file: SourceFile, state: JobState, catalog: WtCatalog, cache?: DeriveCache, jobName = ''): DerivedJob {
   const rules = state.edgeRules;
   const source = memo(cache, 'parse', [file.bytes, file.kind, state.encoding, state.delimiter, state.sheet], () => parseSource(file, state));
   const issues: Issue[] = [];
@@ -219,6 +219,9 @@ export function deriveJob(file: SourceFile, state: JobState, catalog: WtCatalog,
   const orphanEdits = Object.keys(state.edits).filter((k) => !keys.has(k));
 
   // pregled po materijalu + jedinstvena imena fajlova
+  // predlog imena: ime posla; kad posao daje više fajlova, uz njega ide i oznaka materijala
+  const job = safeFileName(jobName).replace(/[. ]+$/, '');
+  const fileCount = sourceMaterials.filter((m) => records.some((r) => r.rec.material === m)).length;
   const used = new Set<string>();
   const materials: MaterialView[] = [];
   for (const m of sourceMaterials) {
@@ -228,12 +231,10 @@ export function deriveJob(file: SourceFile, state: JobState, catalog: WtCatalog,
     const { wt, auto } = resolveWt(catalog, state, m);
     const band = c.band && catalog.edgeBands.some((b) => b.code === c.band) ? c.band : '';
     const g = grainOf(catalog, state, m);
-    const suggested =
-      safeFileName(
-        wt
-          ? suggestFilename(wt, catalog.edgeBands.find((b) => b.code === band))
-          : m || baseName(file.name) + (source.sheets.length > 1 ? `_${safeFileName(source.sheets[source.sheet].name)}` : ''),
-      ) || 'zapisi';
+    const own = wt
+      ? suggestFilename(wt, catalog.edgeBands.find((b) => b.code === band))
+      : m || baseName(file.name) + (source.sheets.length > 1 ? `_${safeFileName(source.sheets[source.sheet].name)}` : '');
+    const suggested = safeFileName(job ? (fileCount > 1 ? `${job} ${own}` : job) : own) || 'zapisi';
     const stem = safeFileName((c.fileName ?? '').replace(/\.tab$/i, '')) || suggested;
     let name = `${stem}.tab`;
     for (let i = 2; used.has(name.toLowerCase()); i++) name = `${stem}_${i}.tab`;
