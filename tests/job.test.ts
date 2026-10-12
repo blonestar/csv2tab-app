@@ -235,3 +235,32 @@ describe('keš po fazama ne menja rezultat', () => {
     expect(derive(f, s1, cache).records.map((r) => r.rec)).toEqual(d1.records.map((r) => r.rec));
   });
 });
+
+describe('ime posla u predlogu imena fajla', () => {
+  // isti Kašmir, ali je u jednom redu drugi materijal: dva fajla u poslu
+  const twoMaterials = (): SourceFile => {
+    const lines = Buffer.from(fx('Kasmir Kronospan 012-010.csv')).toString('utf8').split('\n');
+    lines[2] = lines[2].replace(/^U702;/, 'HRAST;');
+    return { name: 'Kasmir Kronospan 012-010.csv', kind: 'csv', bytes: new Uint8Array(Buffer.from(lines.join('\n'), 'utf8')) };
+  };
+  it('jedan materijal: ime fajla je ime posla', () => {
+    expect(deriveJob(kasmir(), newJobState(), catalog, undefined, 'Kuhinja Petrović').materials[0].fileName).toBe('Kuhinja Petrović.tab');
+  });
+  it('ručno ime ima prednost nad imenom posla', () => {
+    const s = withChoice(newJobState(), 'U702', { fileName: 'Moj fajl' });
+    expect(deriveJob(kasmir(), s, catalog, undefined, 'Kuhinja Petrović').materials[0].fileName).toBe('Moj fajl.tab');
+  });
+  it('nedozvoljen znak i tačka na kraju se čiste', () => {
+    expect(deriveJob(kasmir(), newJobState(), catalog, undefined, 'a/b.').materials[0].fileName).toBe('a_b.tab');
+  });
+  it('više materijala: svako ime počinje imenom posla, a imena su različita', () => {
+    const d = deriveJob(twoMaterials(), newJobState(), catalog, undefined, 'Kuhinja Petrović');
+    expect(d.materials).toHaveLength(2);
+    const names = d.materials.map((m) => m.fileName);
+    for (const n of names) expect(n.startsWith('Kuhinja Petrović ')).toBe(true);
+    expect(new Set(names).size).toBe(2);
+  });
+  it('bez imena posla ime ostaje kao do sada', () => {
+    expect(deriveJob(kasmir(), newJobState(), catalog).materials[0].fileName).toBe('U-702 18 mm.tab');
+  });
+});

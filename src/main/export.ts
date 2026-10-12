@@ -1,7 +1,7 @@
-// Upis .tab fajlova u WT folder: provera šta već postoji i atomičan upis. Bez Electrona, radi i u Node-u (testovi).
+// Upis .tab fajlova u folder za izvoz: provera šta već postoji i atomičan upis. Bez Electrona, radi i u Node-u (testovi).
 import { randomBytes } from 'node:crypto';
 import { open, readFile, rename, stat, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { ExportCheck, ExportItem, ExportWriteResult } from '../shared/api';
 import { exportFileName } from './exportName';
 import { fileErrorMessage, folderName } from './fileNames';
@@ -14,14 +14,14 @@ type FolderState = { ok: true; folder: string } | Extract<ExportCheck, { ok: fal
 export async function folderState(folder: string): Promise<FolderState> {
   const label = folderName(folder);
   if (!folder) {
-    return { ok: false, reason: 'no-folder', folder, message: 'WT folder nije zadat. Izaberite ga u podešavanjima.' };
+    return { ok: false, reason: 'no-folder', folder, message: 'Folder za izvoz nije zadat. Izaberite ga u podešavanjima.' };
   }
   try {
     if ((await stat(folder)).isDirectory()) return { ok: true, folder: label };
   } catch {
     /* ne postoji ili nije dostupan */
   }
-  return { ok: false, reason: 'folder-missing', folder: label, message: `WT folder „${label}" ne postoji ili nije dostupan. Izaberite ga ponovo.` };
+  return { ok: false, reason: 'folder-missing', folder: label, message: `Folder za izvoz „${label}" ne postoji ili nije dostupan. Izaberite ga ponovo.` };
 }
 
 const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && Buffer.compare(a, b) === 0;
@@ -88,6 +88,55 @@ async function writeAtomic(path: string, bytes: Uint8Array): Promise<void> {
     await unlink(tmp).catch(() => {});
     throw e;
   }
+}
+
+export type SavePicker = (defaultPath: string) => Promise<string | null>;
+
+export interface AskedItem {
+  name: string;
+  status: 'written' | 'identical' | 'canceled' | 'error';
+  message?: string;
+  /** Puna putanja foldera u koji je fajl upisan (samo written/identical). */
+  dir?: string;
+}
+
+/**
+ * Izvoz sa pitanjem: za svaki fajl korisnik bira mesto i ime. Dijalog se otvara u `startFolder` (ako postoji), a
+ * posle u folderu prethodnog fajla. Odustajanje prekida i sve preostale fajlove. Prepisivanje potvrđuje sam dijalog.
+ */
+export async function writeExportAsk(startFolder: string, items: readonly ExportItem[], pick: SavePicker): Promise<{ dir: string; items: AskedItem[] }> {
+  let dir = startFolder && (await folderState(startFolder)).ok ? startFolder : '';
+  let stopped = false;
+  const out: AskedItem[] = [];
+  for (const item of items) {
+    const suggested = exportFileName(item.name);
+    const path = stopped ? null : await pick(dir ? join(dir, suggested) : suggested);
+    if (!path) {
+      stopped = true;
+      out.push({ name: suggested, status: 'canceled' });
+      continue;
+    }
+    // ime iz dijaloga prolazi isto čišćenje kao i svako drugo (ekstenzija .tab, rezervisana imena)
+    const name = exportFileName(basename(path));
+    const target = dirname(path);
+    const final = join(target, name);
+    try {
+      const ex = await readExisting(final);
+      if (ex.exists && ex.bytes && same(ex.bytes, item.bytes)) out.push({ name, status: 'identical', dir: target });
+      else if (ex.exists && final !== path) {
+        // dijalog je potvrdio prepisivanje druge putanje, ne ove
+        out.push({ name, status: 'error', message: 'Fajl sa tim imenom već postoji.' });
+        continue;
+      } else {
+        await writeAtomic(final, item.bytes);
+        out.push({ name, status: 'written', dir: target });
+      }
+      dir = target;
+    } catch (e) {
+      out.push({ name, status: 'error', message: fileErrorMessage(e) });
+    }
+  }
+  return { dir, items: out };
 }
 
 /** Postojeći različit fajl se prepisuje samo ako je njegovo konačno ime u `overwrite` (korisnik je video razlike). */

@@ -6,7 +6,7 @@ export function installMenu(command: (c: MainCommand) => void, theme: Theme, set
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'Datoteka', submenu: [
       { id: 'import', label: 'Uvezi fajl…', accelerator: 'CommandOrControl+O', click: () => command('import') },
-      { id: 'export', label: 'Izvezi u WT folder', accelerator: 'CommandOrControl+S', click: () => command('export') },
+      { id: 'export', label: 'Izvezi .tab', accelerator: 'CommandOrControl+S', click: () => command('export') },
       { type: 'separator' },
       { id: 'settings', label: 'Podešavanja', click: () => command('settings') },
       { type: 'separator' },

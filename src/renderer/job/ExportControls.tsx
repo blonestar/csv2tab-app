@@ -1,11 +1,14 @@
-// Izvoz jednim klikom: provera šta u WT folderu već postoji, pitanje (sa razlikama) samo kad se fajl razlikuje, upis.
+// Izvoz: dva toka. Podrazumevano (podešavanje exportAsk) program pita gde i kako da nazove svaki .tab (sistemski
+// dijalog). Inače: provera šta u folderu za izvoz već postoji, pitanje (sa razlikama) samo kad se fajl razlikuje, upis.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { compareParts } from '@core/compare';
 import { readWtTab, type WtPart } from '@core/wtTab';
+import type { ExportWriteResult } from '../../shared/api';
 import { DiffSummary, DiffTable } from '../components/DiffTable';
 import { useSession } from '../session';
 import { exportFiles, type DerivedJob, type ExportFile } from './derive';
 import { confirmedByExport } from './memory';
+import { withChoice } from './state';
 
 interface Pending {
   files: ExportFile[];
@@ -57,7 +60,7 @@ function DiffItem({ file, existing, name, checked, onCheck }: { file: ExportFile
 }
 
 export function ExportControls({ derived, exportRequest }: { derived: DerivedJob; exportRequest?: number }) {
-  const { session, flush, applyExports } = useSession();
+  const { session, flush, applyExports, setState } = useSession();
   const [busy, setBusy] = useState(false);
   const [banner, setBanner] = useState<Banner>(null);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -75,6 +78,25 @@ export function ExportControls({ derived, exportRequest }: { derived: DerivedJob
       setBanner({ kind: 'problem', text: res.message });
       return;
     }
+    await report(files, res);
+  }
+
+  // izvoz sa pitanjem: korisnik je u dijalogu mogao da promeni ime, pa posao pamti novo ime (izlazni fajl i izvoz idu uz to)
+  async function finishAsk(files: ExportFile[]) {
+    const res = await window.api.export.save(files.map((f) => ({ name: f.name, bytes: f.bytes, material: f.material })), session?.jobId ?? null);
+    let renamed = false;
+    res.items.forEach((it, i) => {
+      if ((it.status === 'written' || it.status === 'identical') && it.name !== files[i].name) {
+        renamed = true;
+        setState((s) => withChoice(s, files[i].material, { fileName: it.name.replace(/\.tab$/i, '') }));
+      }
+    });
+    await report(files, res);
+    // izvoz se preračunava nad novim imenima pri čuvanju, pa se čuva odmah
+    if (renamed) await flush();
+  }
+
+  async function report(files: ExportFile[], res: Extract<ExportWriteResult, { ok: true }>) {
     if (res.job) applyExports(res.job);
     // upisan (ili već isti) fajl potvrđuje izbore za svoj materijal; pamćenje je pomoćno i ne sme da pokvari izvoz
     if (session && session.jobId !== null) {
@@ -95,6 +117,11 @@ export function ExportControls({ derived, exportRequest }: { derived: DerivedJob
     const bad = res.items.filter((it) => it.status === 'error' || it.status === 'skipped');
     const written = res.items.filter((it) => it.status === 'written').length;
     const same = res.items.filter((it) => it.status === 'identical').length;
+    // odustajanje u dijalogu nije greška: ako ništa nije upisano i nema problema, poruke nema
+    if (!written && !same && !bad.length && !res.recordError) {
+      setBanner(null);
+      return;
+    }
     const text =
       `Upisano: ${written} ${written === 1 ? 'fajl' : 'fajlova'} u ${res.folder}` +
       (same ? `; ${same} već postoji isti` : '') +
@@ -113,6 +140,10 @@ export function ExportControls({ derived, exportRequest }: { derived: DerivedJob
         return;
       }
       const files = exportFiles(derived);
+      if (await window.api.settings.get('exportAsk')) {
+        await finishAsk(files);
+        return;
+      }
       const check = await window.api.export.check(files.map((f) => ({ name: f.name, bytes: f.bytes })));
       if (!check.ok) {
         setBanner({ kind: 'problem', text: check.message });
@@ -154,14 +185,14 @@ export function ExportControls({ derived, exportRequest }: { derived: DerivedJob
   const differing = pending?.items.filter((i) => i.status === 'differs') ?? [];
   return (
     <>
-      <button type="button" className="btn primary" data-testid="export" disabled={busy || !derived.canExport} onClick={() => void run()} title={derived.canExport ? 'Upiši jedan .tab po materijalu u WT folder' : 'Nema zapisa za izvoz'}>
+      <button type="button" className="btn primary" data-testid="export" disabled={busy || !derived.canExport} onClick={() => void run()} title={derived.canExport ? 'Sačuvaj jedan .tab po materijalu' : 'Nema zapisa za izvoz'}>
         Izvezi
       </button>
       {banner && (
         <div className={`banner ${banner.kind}`} role={banner.kind === 'ok' ? 'status' : 'alert'} data-testid="export-banner" data-kind={banner.kind}>
           <span>{banner.text}</span>
           {banner.kind === 'problem' && (
-            <button type="button" className="btn small" data-testid="choose-wt-folder" onClick={() => void chooseFolder()}>Izaberi WT folder…</button>
+            <button type="button" className="btn small" data-testid="choose-wt-folder" onClick={() => void chooseFolder()}>Izaberi folder za izvoz…</button>
           )}
           <button type="button" className="icon" aria-label="Zatvori poruku" onClick={() => setBanner(null)}>×</button>
         </div>
@@ -169,7 +200,7 @@ export function ExportControls({ derived, exportRequest }: { derived: DerivedJob
       {pending && (
         <div className="overlay">
           <div className="dialog wide" role="dialog" aria-modal="true" aria-label="Prepisivanje postojećih fajlova" data-testid="overwrite-dialog">
-            <h2>U WT folderu već postoje različiti fajlovi</h2>
+            <h2>U folderu za izvoz već postoje različiti fajlovi</h2>
             <p className="muted">{pending.folder}</p>
             <div className="dialog-body">
               {differing.map((it) => {

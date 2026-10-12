@@ -27,8 +27,10 @@ Prvo izdanje:
 1. **Poslovi.** Uvezena krojna lista je posao sa imenom, datumom, materijalima, ručnim ispravkama i spiskom izvezenih
    fajlova. Lista poslova ima pretragu; posao se ponovo otvara i izvozi bez originalnog fajla. Posao menjan posle
    poslednjeg izvoza je označen.
-2. **WT folder zadat jednom.** Izvoz je jedan klik, bez dijaloga, pravo u folder iz podešavanja (po materijalu, bez
-   ZIP-a). Ako fajl sa tim imenom već postoji, aplikacija ga sama uporedi sa novim i pokaže razlike pre prepisivanja.
+2. **Izvoz pita ili ide pravo u folder.** Podrazumevano izvoz za svaki .tab pita gde da ga sačuva i kako da ga
+   nazove (sistemski dijalog, otvara se u poslednjem folderu). Kad se pitanje isključi u podešavanjima, izvoz je jedan
+   klik, pravo u folder za izvoz (po materijalu, bez ZIP-a); ako fajl sa tim imenom već postoji, aplikacija ga sama
+   uporedi sa novim i pokaže razlike pre prepisivanja. Ime fajla koje nije ručno upisano dolazi iz imena posla.
 3. **Pamćenje izbora.** Materijal iz CSV-a → WT materijal i traka, mapiranje kolona po zaglavlju, „Prati teksturu" po
    materijalu. Sledeći uvoz nudi ono što je prošli put izabrano.
 4. **Podešavanja.** Folderi, tabela šifara kantovanja, pravilo za jednobojne dekore, spajanje istih delova, tema,

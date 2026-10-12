@@ -22,6 +22,8 @@ const old = new DatabaseSync(join(userData, 'csv2tab.db'));
 old.exec(readFileSync(join(root, 'migrations/0001_init.sql'), 'utf8'));
 old.exec('PRAGMA user_version = 1');
 old.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('wtFolder', JSON.stringify(wt));
+// Izvoz bez pitanja: paket u testu nema prozor za sistemski dijalog „Sačuvaj kao“.
+old.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('exportAsk', JSON.stringify(false));
 // Bez automatske provere ažuriranja pri pokretanju (inače bi program posle 5 s zvao GitHub).
 old.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('updateOnStartup', 'false');
 old.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('updateInterval', JSON.stringify('never'));

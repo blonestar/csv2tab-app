@@ -34,7 +34,7 @@ export const MAIN_COMMANDS = ['import', 'export', 'search', 'settings', 'updates
 export type MainCommand = (typeof MAIN_COMMANDS)[number];
 export interface MenuRequest { id: number; kind: MainCommand }
 
-/** Fajl za upis u WT folder. Ime je samo predlog: glavni proces ga svodi na osnovno ime sa ekstenzijom .tab. */
+/** Fajl za upis u folder za izvoz. Ime je samo predlog: glavni proces ga svodi na osnovno ime sa ekstenzijom .tab. */
 export interface ExportItem {
   name: string;
   bytes: Uint8Array;
@@ -64,7 +64,8 @@ export type ExportWriteResult =
   | {
       ok: true;
       folder: string;
-      items: { name: string; status: 'written' | 'identical' | 'skipped' | 'error'; message?: string }[];
+      /** canceled: korisnik je u dijalogu za čuvanje odustao od ove stavke (i svih posle nje). */
+      items: { name: string; status: 'written' | 'identical' | 'skipped' | 'error' | 'canceled'; message?: string }[];
       /** Izvozi posla posle beleženja (samo kad je zadat posao). */
       job?: JobExports;
       /** Fajlovi su upisani, ali izvoz nije zabeležen u bazi. */
@@ -132,6 +133,7 @@ export interface IpcOperations {
   'files.chooseFolder': { args: [key: FolderSettingKey]; result: string | null };
   'export.check': { args: [items: ExportItem[]]; result: ExportCheck };
   'export.write': { args: [items: ExportItem[], overwrite: string[], jobId: number | null]; result: ExportWriteResult };
+  'export.save': { args: [items: ExportItem[], jobId: number | null]; result: Extract<ExportWriteResult, { ok: true }> };
   'jobs.list': { args: [query: JobListQuery]; result: JobListResult };
   'jobs.findBySource': { args: [sha256: string]; result: JobListItem[] };
   'jobs.get': { args: [id: number]; result: JobDetail };
@@ -186,8 +188,10 @@ export interface Api {
   export: {
     /** Gde fajlovi već postoje i da li su isti; ništa ne upisuje. */
     check(items: ExportItem[]): Promise<ExportCheck>;
-    /** Upisuje u WT folder. Postojeći različit fajl se prepisuje samo ako mu je ime u `overwrite`. */
+    /** Upisuje u folder za izvoz. Postojeći različit fajl se prepisuje samo ako mu je ime u `overwrite`. */
     write(items: ExportItem[], overwrite: string[], jobId: number | null): Promise<ExportWriteResult>;
+    /** Za svaki fajl pita gde i pod kojim imenom da ga sačuva (sistemski dijalog), pa upisuje. Odustajanje prekida ostatak. */
+    save(items: ExportItem[], jobId: number | null): Promise<Extract<ExportWriteResult, { ok: true }>>;
   };
   jobs: {
     /** Lista sa pretragom i stranicama; zapisi se ne šalju. */
@@ -200,7 +204,7 @@ export interface Api {
     /** Stanje, zapisi i izlazni fajlovi posla; izvorni bajtovi se ne menjaju. */
     save(id: number, save: JobSave): Promise<JobSavedResult>;
     update(id: number, meta: JobMeta): Promise<JobListItem>;
-    /** Briše posao i njegove sačuvane izvoze (fajlovi u WT folderu ostaju). */
+    /** Briše posao i njegove sačuvane izvoze (fajlovi u folderu za izvoz ostaju). */
     delete(id: number): Promise<void>;
     exports(id: number): Promise<JobExports>;
   };

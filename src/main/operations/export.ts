@@ -1,5 +1,8 @@
-import { checkExport, writeExport } from '../export';
+import { checkExport, writeExport, writeExportAsk } from '../export';
 import { getJobItem, jobExports, recordExports, type ExportToRecord } from '../db/jobs';
+import { setSetting } from '../db/settings';
+import { pickSaveFile } from '../files';
+import { folderName } from '../fileNames';
 import { exportItemsArg, jobIdArg, overwriteArg } from './validate';
 import { HEADER_SIZE, RECORD_SIZE } from '../../../web/src/lib/wtTab';
 import { wtFolder } from './files';
@@ -55,5 +58,58 @@ export function exportOperations(ctx: IpcContext) {
         return out;
       },
     } satisfies Operation<'export.write'>,
+    'export.save': {
+      validate(args) {
+        if (args.length !== 2) throw new Error('Očekivani su lista fajlova i posao.');
+        const items = exportItemsArg(args[0]);
+        const jobId = args[1] === null ? null : jobIdArg(args[1]);
+        if (jobId !== null && items.some((i) => i.material === undefined)) throw new Error('Uz posao svaki fajl mora imati materijal.');
+        return [items, jobId];
+      },
+      async run(items, jobId) {
+        // posao se proverava pre dijaloga: ne upisuje se fajl koji posle ne može da se zabeleži
+        if (jobId !== null && !getJobItem(ctx.db.sqlite, jobId)) throw new Error('Posao ne postoji.');
+        const db = ctx.db.sqlite;
+        const res = await writeExportAsk(wtFolder(ctx), items, (p) => pickSaveFile(ctx.testMode, p));
+        const out: Extract<ExportWriteResult, { ok: true }> = {
+          ok: true,
+          folder: folderName(res.dir),
+          items: res.items.map(({ name, status, message }) => (message === undefined ? { name, status } : { name, status, message })),
+        };
+        if (db !== ctx.db.sqlite || ctx.lock.restoring) {
+          if (jobId !== null) out.recordError = 'Baza je promenjena tokom izvoza; izvoz nije zabeležen u vraćenoj bazi.';
+          return out;
+        }
+        if (res.items.some((it) => it.status === 'written' || it.status === 'identical')) {
+          // sledeći dijalog se otvara u poslednjem folderu; pamćenje je pomoćno, pa greška ne sme da pokvari izvoz
+          try {
+            setSetting(db, 'wtFolder', res.dir);
+          } catch {
+            /* ništa: folder se tada samo ne pamti */
+          }
+        }
+        if (jobId === null) return out;
+        // Beleži se samo ono što je zaista upisano ili već postoji bajt-identično; odustalo i neuspelo se ne beleži.
+        const toRecord: ExportToRecord[] = [];
+        res.items.forEach((it, i) => {
+          if ((it.status !== 'written' && it.status !== 'identical') || !it.dir) return;
+          const bytes = items[i].bytes;
+          toRecord.push({
+            material: items[i].material ?? '',
+            fileName: it.name,
+            folder: it.dir,
+            bytes,
+            count: (bytes.length - HEADER_SIZE) / RECORD_SIZE,
+            result: it.status,
+          });
+        });
+        try {
+          out.job = toRecord.length ? recordExports(ctx.db.sqlite, jobId, toRecord) : jobExports(ctx.db.sqlite, jobId);
+        } catch (e) {
+          out.recordError = e instanceof Error ? e.message : String(e);
+        }
+        return out;
+      },
+    } satisfies Operation<'export.save'>,
   };
 }

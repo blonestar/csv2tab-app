@@ -4,7 +4,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { WtCatalog } from '@core/catalog';
 import type { JobState, OpenedFile } from '../shared/job';
-import type { JobDetail, JobExports, JobListItem } from '../shared/jobs';
+import { defaultJobName, type JobDetail, type JobExports, type JobListItem } from '../shared/jobs';
 import { defaultsFromSettings, newJobState } from './job/defaults';
 import { deriveJob, type DeriveCache, type DerivedJob, type SourceFile } from './job/derive';
 import { rememberDiff, stateForNewJob } from './job/memory';
@@ -86,7 +86,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const savedRef = useRef<JobState | null>(null);
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const cache = useRef<DeriveCache>({});
-  const last = useRef<{ file: SourceFile; state: JobState; catalog: WtCatalog; value: DerivedJob } | null>(null);
+  const last = useRef<{ file: SourceFile; state: JobState; catalog: WtCatalog; name: string; value: DerivedJob } | null>(null);
 
   const mutate = useCallback((fn: (s: JobSession | null) => JobSession | null) => {
     const next = fn(sessionRef.current);
@@ -104,17 +104,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     );
   }, []);
 
-  const derive = useCallback((file: SourceFile, state: JobState, cat: WtCatalog): DerivedJob => {
+  const derive = useCallback((file: SourceFile, state: JobState, cat: WtCatalog, name: string): DerivedJob => {
     const l = last.current;
-    if (l && l.file === file && l.state === state && l.catalog === cat) return l.value;
-    const value = deriveJob(file, state, cat, cache.current);
-    last.current = { file, state, catalog: cat, value };
+    if (l && l.file === file && l.state === state && l.catalog === cat && l.name === name) return l.value;
+    const value = deriveJob(file, state, cat, cache.current, name);
+    last.current = { file, state, catalog: cat, name, value };
     return value;
   }, []);
 
   const derived = useMemo(
-    () => (session && catalog && !session.stateError ? derive(session.file, session.state, catalog) : null),
-    [session?.file, session?.state, session?.stateError, catalog, derive], // eslint-disable-line react-hooks/exhaustive-deps
+    () => (session && catalog && !session.stateError ? derive(session.file, session.state, catalog, session.name) : null),
+    [session?.file, session?.state, session?.stateError, session?.name, catalog, derive], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // ---------- čuvanje ----------
@@ -125,7 +125,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const { state, jobId, id } = s;
     setPhase({ kind: 'saving' });
     try {
-      const derivedNow = derive(s.file, state, cat);
+      const derivedNow = derive(s.file, state, cat, s.name);
       // ručne promene izbora od poslednjeg uspešnog čuvanja idu u pamćenje u istoj transakciji
       const remember = rememberDiff(savedRef.current ?? state, state, derivedNow);
       const res = await window.api.jobs.save(jobId, { ...buildSave(state, derivedNow), ...(remember ? { remember } : {}) });
@@ -228,6 +228,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const settings = await window.api.settings.all();
       const { state, derived: derivedNew } = await stateForNewJob(file, defaultsFromSettings(settings), cat, (q) =>
         window.api.memory.lookup(q).catch(() => ({ materials: {}, mapping: null })),
+        defaultJobName(file.name),
       );
       const created = await window.api.jobs.create(file, buildSave(state, derivedNew));
       begin({
@@ -287,7 +288,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const cur = sessionRef.current;
       if (!cur) return;
       const item = await window.api.jobs.update(cur.jobId, meta);
-      mutate((s) => (s && s.jobId === item.id ? { ...s, name: item.name, note: item.note } : s));
+      // nov identitet stanja: imena izlaznih fajlova su se promenila, pa se posao mora ponovo sačuvati (čuva ga odloženo čuvanje)
+      mutate((s) =>
+        s && s.jobId === item.id
+          ? { ...s, name: item.name, note: item.note, ...(item.name !== cur.name && !s.stateError ? { state: { ...s.state } } : {}) }
+          : s,
+      );
     },
     [mutate],
   );

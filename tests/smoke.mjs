@@ -1,6 +1,7 @@
 // Smoke test izgrađene aplikacije (Playwright _electron): prozor učitava app://csv2tab/, most radi, jezgro u
 // rendereru daje iste bajtove za CSV, ODS i XLSX, a .tab round trip je bajt-identičan. Tema promenjena kroz interfejs
-// preživljava restart (baza), a katalog se prikazuje. Uvoz (dijalog i prevlačenje), izvoz u WT folder, pitanje sa
+// preživljava restart (baza), a katalog se prikazuje. Uvoz (dijalog i prevlačenje), izvoz u folder za izvoz, izvoz sa
+// pitanjem (dijalog „Sačuvaj kao“), pitanje sa
 // razlikama pre prepisivanja i prozor za poređenje. Poslovi: automatsko čuvanje, lista sa pretragom, ponovno otvaranje
 // posle restarta bez originalnog fajla (isti .tab), stanje izvoza, isti fajl dvaput, brisanje, greška čuvanja i
 // neispravno sačuvano stanje. Dijalozi se zaobilaze promenljivama okruženja (CSV2TAB_TEST_*) koje glavni proces
@@ -246,8 +247,10 @@ try {
   const wtB = mkdtempSync(join(tmpdir(), 'csv2tab-wt-b-'));
   const wtC = mkdtempSync(join(tmpdir(), 'csv2tab-wt-c-'));
   const wtD = mkdtempSync(join(tmpdir(), 'csv2tab-wt-d-'));
+  const askA = mkdtempSync(join(tmpdir(), 'csv2tab-ask-a-'));
+  const askB = mkdtempSync(join(tmpdir(), 'csv2tab-ask-b-'));
   const srcDir = mkdtempSync(join(tmpdir(), 'csv2tab-src-'));
-  extraDirs.push(wtA, wtB, wtC, wtD, srcDir);
+  extraDirs.push(wtA, wtB, wtC, wtD, askA, askB, srcDir);
   const setEnv = (k, v) => app.evaluate((_, [key, val]) => { process.env[key] = val; }, [k, v]);
   const nav = (name) => page.click(`nav button:has-text("${name}")`);
   const sessionId = () => page.evaluate(() => document.querySelector('[data-testid=jobview]')?.dataset.session ?? null);
@@ -353,6 +356,9 @@ try {
   assert.match(guard[0], /izborom foldera/);
   assert.match(guard[20], /Posao ne postoji/);
   assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), '');
+  // izvoz sa pitanjem je podrazumevan; ostatak testa radi stari tok (upis u folder), a izvoz sa pitanjem je na kraju testa
+  assert.equal(await page.evaluate(() => window.api.settings.get('exportAsk')), true, 'izvoz sa pitanjem nije podrazumevan');
+  await page.evaluate(() => window.api.settings.set('exportAsk', false));
   await setEnv('CSV2TAB_TEST_IMPORT', join(srcDir, 'ne-postoji.csv'));
   const missingFile = await page.evaluate(async () => {
     try { await window.api.files.open('import'); } catch (error) { return String(error); }
@@ -973,7 +979,8 @@ try {
   assert.equal(await page.inputValue('[data-testid=file-name]'), '', 'ručno ime fajla je zapamćeno');
   assert.equal(await page.locator('[data-origin=memory]').count(), 3);
   const rememberedName = (await page.textContent('[data-testid=out-name]')).trim();
-  assert.match(rememberedName, /^U-702 /);
+  // WT materijal je gore dokazan (secondState.materials.U702); ime sada dolazi od imena posla, pa proveravamo samo .tab
+  assert.match(rememberedName, /\.tab$/);
   await screenshots('materijali');
   await openTab('source');
   await page.waitForSelector('[data-testid=mapping-memory]');
@@ -1009,6 +1016,12 @@ try {
   const newJob = await page.evaluate((id) => window.api.jobs.get(+id), newest);
   assert.notEqual(newJob.outputs[0].sha256, oldJob.outputs[0].sha256);
   assert.notDeepEqual(newJob.state.edgeRules, oldJob.state.edgeRules);
+  // ime fajla dolazi od posla, pa novi posao dobija ime starog izlaza ručno; inače nema prepisivanja i potvrde
+  await openTab('materials');
+  await page.fill('[data-testid=file-name]', rememberedName.replace(/\.tab$/, ''));
+  await page.waitForFunction((n) => document.querySelector('[data-testid=out-name]').textContent.trim() === n, rememberedName);
+  await waitSaved();
+  await openTab('parts');
   await page.click('[data-testid=export]');
   await page.waitForSelector('[data-testid=overwrite-confirm]');
   await page.click('[data-testid=overwrite-confirm]');
@@ -1244,6 +1257,48 @@ try {
   } finally {
     await feed.close();
   }
+
+  // izvoz sa pitanjem (podrazumevano): sistemski dijalog za fajl, folder i ime se pamte. Na kraju je jer menja ime
+  // posla i listu izvoza, a ostatak testa radi sa starim tokom. Posao Kašmir je menjan (količina iz koraka 2), pa su
+  // očekivani bajtovi kao u `edited`.
+  await page.evaluate(() => window.api.settings.set('exportAsk', true));
+  await nav('Poslovi');
+  await page.waitForSelector('[data-testid=job-list]');
+  await page.click(`tr[data-job-id="${idKasmir}"] [data-testid=job-open]`);
+  await page.waitForSelector('[data-testid=jobview]');
+  assert.equal(await jobId(), idKasmir);
+  await waitRecords(14);
+  await waitSaved();
+  await openTab('parts');
+  // stari baner se zatvara da waitBanner čeka baš ovaj izvoz
+  const closeBanner = async () => {
+    if (!(await page.$('[data-testid=export-banner]'))) return;
+    await page.click('[data-testid=export-banner] button[aria-label="Zatvori poruku"]');
+    await page.waitForSelector('[data-testid=export-banner]', { state: 'detached' });
+  };
+  // 1. dijalog: fajl se čuva u askA pod imenom posla, folder se pamti, baner ne pominje punu putanju
+  await closeBanner();
+  await setEnv('CSV2TAB_TEST_SAVE', askA);
+  await page.click('[data-testid=export]');
+  await waitBanner('ok');
+  assert.deepEqual(readdirSync(askA), [outName]);
+  assert.deepEqual(disk(askA, outName), edited, 'izvoz sa pitanjem: fajl != bajtovi posla');
+  assert.equal(await page.evaluate(() => window.api.settings.get('wtFolder')), basename(askA), 'folder iz dijaloga nije zapamćen');
+  assert.equal((await page.textContent('[data-testid=export-banner]')).includes(askA), false, 'baner pominje punu putanju');
+  const askHistory = await page.evaluate((id) => window.api.jobs.exports(+id), idKasmir);
+  assert.equal(askHistory.exports[0].folder, basename(askA));
+  assert.equal(askHistory.exports[0].fileName, outName);
+  await page.waitForSelector('[data-testid=job-status][data-status=current]');
+  // 2. korisnik u dijalogu promeni ime: fajl ide pod novim imenom, a posao pamti to ime
+  await closeBanner();
+  await setEnv('CSV2TAB_TEST_SAVE', join(askB, 'Drugo ime.tab'));
+  await page.click('[data-testid=export]');
+  await waitBanner('ok');
+  assert.deepEqual(readdirSync(askB), ['Drugo ime.tab']);
+  await openTab('materials');
+  await page.waitForFunction(() => document.querySelector('[data-testid=out-name]').textContent.trim() === 'Drugo ime.tab');
+  await page.waitForSelector('[data-testid=job-status][data-status=current]');
+  console.log(`izvoz sa pitanjem: "${outName}" u izabrani folder, folder se pamti, baner bez putanje; promenjeno ime u dijalogu ("Drugo ime.tab") posao pamti`);
 
   assert.deepEqual(problems, [], `CSP ili greške u konzoli: ${problems.join(' | ')}`);
   await app.close();

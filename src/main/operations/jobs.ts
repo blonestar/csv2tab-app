@@ -2,13 +2,10 @@ import { app } from 'electron';
 import { createJob, deleteJob, findBySource, getJob, jobExports, listJobs, saveJobRemembering, updateJobMeta } from '../db/jobs';
 import { openedPathFor } from '../openedPaths';
 import { TEST_ENV, testOverride } from '../testHooks';
-import { MAX_JOB_NAME } from '../../shared/jobs';
+import { defaultJobName } from '../../shared/jobs';
 import { jobFileArg, jobIdArg, jobListQueryArg, jobMetaArg, jobSaveArg, sha256Arg } from './validate';
 import type { Operation } from './types';
 import type { IpcContext } from './types';
-
-/** Ime posla po zadatku: ime fajla bez ekstenzije (skraćeno na najveću dužinu imena). */
-const defaultName = (fileName: string) => (fileName.replace(/\.[^.]+$/, '').trim() || fileName).slice(0, MAX_JOB_NAME);
 
 export function jobsOperations(ctx: IpcContext) {
   // ctx.db.sqlite se čita pri svakom pozivu (ne čuva se): vraćanje iz kopije ga zamenjuje
@@ -39,7 +36,7 @@ export function jobsOperations(ctx: IpcContext) {
         return [jobFileArg(args[0]), jobSaveArg(args[1])];
       },
       run(file, save) {
-        const name = defaultName(file.name);
+        const name = defaultJobName(file.name);
         const id = createJob(ctx.db.sqlite, name, { ...file, path: openedPathFor(file.name, file.bytes) }, save);
         const item = ctx.db.sqlite.prepare('SELECT created_at FROM jobs WHERE id = ?').get(id) as { created_at: number };
         return { id, name, createdAt: item.created_at };

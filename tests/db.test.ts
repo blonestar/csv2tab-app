@@ -277,6 +277,7 @@ describe('podešavanja', () => {
     expect(getAllSettings(db.sqlite)).toEqual({
       theme: 'dark',
       wtFolder: '',
+      exportAsk: true,
       backupFolder: '',
       edgeRules: DEFAULT_EDGE_RULES,
       decorRule: true,
